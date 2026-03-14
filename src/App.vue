@@ -179,7 +179,7 @@ function onSongSelect({ title, lyrics, fontAdjust: fa, merge, separators, altCol
   songSeparators.value = separators !== undefined ? separators : userDefaults.value.separators
   songAltColors.value = altColors !== undefined ? altColors : userDefaults.value.altColors
   showLibrary.value = false
-  refreshSavedState()
+  refreshCurrentSong()
   fetchChords(title)
 }
 

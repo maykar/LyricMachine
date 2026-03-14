@@ -98,17 +98,18 @@ See `.env.example` for required variables. Never commit `.env`.
 - **Export/Import** — download favorites as JSON, import with merge (dedup by title)
 - **New song creation** — manual artist + track + lyrics form
 - **Drag-and-drop reorder** — reorder favorites by dragging cards
-- **Context menu** — right-click for label change, played toggle, edit play count, delete
+- **Context menu** — right-click for label change, played toggle, edit play count, clear count, delete; Ctrl+right-click for native browser menu
 - **Filters** — unplayed, no chords, by label (Fresh/Getting There/In Setlist)
 - **Sort** — by label or play count, ascending/descending toggle
-- **Paginated grid** — 3-column card grid with dynamic row count based on viewport
+- **Paginated grid** — 4-column card grid with dynamic row count based on viewport
+- **Word-boundary truncation** — card text truncates at clean word boundaries, never leaving trailing spaces
 
 ### Song Management
 - **Three labels** — Fresh (red), Getting There (yellow), In Setlist (green)
 - **Play tracking** — toggle played status with increment play count, display count
 - **Per-song settings** — font size offset, merge, separators, alt colors — all saved per favorite
-- **Kanban board** — drag songs between label columns, confetti + "KANBAN!" speech on In Setlist moves
-- **Song randomizer** — slot-machine carousel with tick sounds, Spotify autoplay, gold confetti, impact sound, celebrations
+- **Kanban board** — drag songs between label columns, confetti + party sound; click title for randomized TTS "KANBAN!" (5% chance Easter egg phrase), random voice/pitch/rate
+- **Song randomizer** — slot-machine carousel with tick sounds, Spotify autoplay, gold confetti, impact sound, celebrations; Space to spin
 
 ### Playback
 - **Spotify player** — embedded iframe player, auto-lookup track ID
@@ -117,7 +118,7 @@ See `.env.example` for required variables. Never commit `.env`.
 ### Keyboard Shortcuts
 | Key | Action |
 |-----|--------|
-| `Space` | Open/close library |
+| `Space` | Open/close library (spin when randomizer is open) |
 | `T` | Open UG search + start import poll |
 | `C` | Toggle chord drawer |
 | `P` | Toggle Spotify player |

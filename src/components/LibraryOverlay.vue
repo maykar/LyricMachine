@@ -141,7 +141,7 @@
             :class="{ 'drag-over': dragOverIndex === entry.realIndex, 'is-played': !!entry.fav.played }"
             draggable="true"
             @click="$emit('select', entry.fav)"
-            @contextmenu.prevent="openContextMenu($event, entry.realIndex)"
+            @contextmenu="onContextMenu($event, entry.realIndex)"
             @dragstart="onDragStart(entry.realIndex, $event)"
             @dragover.prevent="onDragOver(entry.realIndex)"
             @dragleave="dragOverIndex = -1"
@@ -149,19 +149,19 @@
             @dragend="onDragEnd"
           >
             <span class="card-top-right">
-              <span class="label-dot-indicator" :style="{ background: labelColor(entry.fav.label) }"></span>
-            </span>
-            <div class="library-item-info">
-              <span class="library-item-artist">{{ splitTitle(entry.fav.title).artist }}</span>
-              <span class="library-item-track">{{ splitTitle(entry.fav.title).track }}</span>
-            </div>
-            <div class="library-item-actions">
               <button
                 class="played-check"
                 :class="{ checked: !!entry.fav.played }"
                 title="Increment play count"
                 @click.stop="incrementPlayed(entry.realIndex)"
               >{{ entry.fav.played ? '✓' : '' }}</button>
+              <span class="label-dot-indicator" :style="{ background: labelColor(entry.fav.label) }"></span>
+            </span>
+            <div class="library-item-info">
+              <span class="library-item-artist">{{ truncate(splitTitle(entry.fav.title).artist, 50) }}</span>
+              <span class="library-item-track">{{ truncate(splitTitle(entry.fav.title).track, 45) }}</span>
+            </div>
+            <div class="library-item-actions">
               <span v-if="entry.fav.playCount" class="play-count">{{ entry.fav.playCount }}</span>
             </div>
           </div>
@@ -222,6 +222,9 @@
         </button>
         <button class="ctx-option" @click="editPlayCountFromCtx">
           <MdiIcon :path="mdiPencil" :size="14" /> Edit Count
+        </button>
+        <button class="ctx-option" @click="clearPlayCountFromCtx">
+          <MdiIcon :path="mdiRefresh" :size="14" /> Clear Count
         </button>
         <div class="ctx-divider"></div>
         <button class="ctx-option ctx-delete" @click="deleteFromCtx">
@@ -293,6 +296,12 @@ function labelColor(label) {
 
 const ctxMenu = reactive({ show: false, x: 0, y: 0, index: -1, fav: null })
 
+function onContextMenu(e, index) {
+  if (e.ctrlKey) return // let browser handle ctrl+right-click
+  e.preventDefault()
+  openContextMenu(e, index)
+}
+
 function openContextMenu(e, index) {
   ctxMenu.x = e.clientX
   ctxMenu.y = e.clientY
@@ -347,6 +356,15 @@ function editPlayCountFromCtx() {
       }
     }
   }
+}
+
+function clearPlayCountFromCtx() {
+  if (ctxMenu.index >= 0) {
+    favorites.value[ctxMenu.index].playCount = 0
+    favorites.value[ctxMenu.index].played = false
+    saveFavorites()
+  }
+  closeContextMenu()
 }
 
 function onKanbanUpdate(updatedFavs) {
@@ -449,6 +467,16 @@ function onRandomizerSelect(fav) {
   showRandomizer.value = false
   emit('select', fav)
 }
+
+function truncate(str, chars) {
+  if (!str || str.length <= chars) return str
+  for (let i = chars; i > 0; i--) {
+    if (str[i] === ' ' && /[a-zA-Z0-9]/.test(str[i - 1])) {
+      return str.substring(0, i) + '…'
+    }
+  }
+  return str.substring(0, chars) + '…'
+}
 const fileInput = ref(null)
 const favorites = ref([])
 const searchResults = ref([])
@@ -457,8 +485,8 @@ const searched = ref(false)
 const favPage = ref(1)
 const rowsPerPage = ref(5)
 
-const COLS = 3
-const CARD_HEIGHT = 72  // approx card height + gap in px
+const COLS = 4
+const CARD_HEIGHT = 64  // approx card height + gap in px
 
 const unplayedFavorites = computed(() => favorites.value.filter(f => !f.played))
 
@@ -694,7 +722,7 @@ onMounted(async () => {
   if (el) {
     // Subtract header (~40px) and page nav (~50px) from available height
     const available = el.clientHeight - 90
-    rowsPerPage.value = Math.max(3, Math.floor(available / CARD_HEIGHT) - 1)
+    rowsPerPage.value = Math.max(2, Math.floor(available / CARD_HEIGHT) - 2)
   }
 
   document.addEventListener('click', closeFilterDropdown)
@@ -883,9 +911,9 @@ onBeforeUnmount(() => {
 
 .library-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 0.5rem;
-  padding: 1.25rem 1.5rem 1rem;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.4rem;
+  padding: 1rem 1.25rem 0.75rem;
 }
 
 .favorites-grid {
@@ -912,11 +940,11 @@ onBeforeUnmount(() => {
 
 .card-top-right {
   position: absolute;
-  top: 0.4rem;
-  right: 0.4rem;
+  top: 0.75rem;
+  right: 1rem;
   display: flex;
   align-items: center;
-  gap: 0.25rem;
+  gap: 0.5rem;
   z-index: 1;
 }
 
@@ -936,8 +964,8 @@ onBeforeUnmount(() => {
 
 .library-item-actions {
   position: absolute;
-  bottom: 0.35rem;
-  right: 0.35rem;
+  bottom: 0.75rem;
+  right: 1rem;
   display: flex;
   gap: 2px;
   z-index: 1;
@@ -1029,6 +1057,7 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   gap: 0.15rem;
+  padding-right: 1.5rem;
 }
 
 .library-item-artist {

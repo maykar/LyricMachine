@@ -1,6 +1,7 @@
 <template>
   <div class="overlay-backdrop randomizer-overlay" @mousedown.self="backdropDown = true" @mouseup.self="onBackdropUp">
     <div v-if="landed" class="light-rays"></div>
+    <div v-if="landed" class="light-rays light-rays-reverse"></div>
     <div class="randomizer-modal">
       <!-- Close button -->
       <button class="randomizer-close" @click="$emit('close')" title="Close"><MdiIcon :path="mdiClose" :size="18" /></button>
@@ -106,6 +107,14 @@
       <div class="glow-star glow-star-4"></div>
       <div class="glow-star glow-star-5"></div>
       <div class="glow-star glow-star-6"></div>
+      <div class="glow-star glow-star-7"></div>
+      <div class="glow-star glow-star-8"></div>
+      <div class="glow-star glow-star-9"></div>
+      <div class="glow-star glow-star-10"></div>
+      <div class="glow-star glow-star-11"></div>
+      <div class="glow-star glow-star-12"></div>
+      <div class="glow-star glow-star-13"></div>
+      <div class="glow-star glow-star-14"></div>
       <div class="firework firework-1"></div>
       <div class="firework firework-2"></div>
       <div class="firework firework-3"></div>
@@ -545,9 +554,30 @@ function onBackdropUp() {
 
 function closeFilterPanel() { showFilterPanel.value = false }
 
+function onKeydown(e) {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return
+  if (e.key === ' ') {
+    e.preventDefault()
+    e.stopPropagation()
+    if (!isSpinning.value && filteredFavorites.value.length >= 2) {
+      ensureAudioResumed().then(() => playTick())
+      onSpinClick()
+    }
+  } else if (e.key === 'Escape') {
+    e.preventDefault()
+    e.stopPropagation()
+    emit('close')
+  } else if (e.key === 'Enter' && landed.value && winnerRenderIndex.value >= 0) {
+    e.preventDefault()
+    e.stopPropagation()
+    emit('select', renderCards.value[winnerRenderIndex.value].fav)
+  }
+}
+
 onMounted(() => {
   reshuffleCards()
   document.addEventListener('click', closeFilterPanel)
+  document.addEventListener('keydown', onKeydown, true)
 
   // Pre-create AudioContext so it's ready for first click
   getAudioCtx()
@@ -576,6 +606,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   document.removeEventListener('click', closeFilterPanel)
+  document.removeEventListener('keydown', onKeydown, true)
   if (animFrame) cancelAnimationFrame(animFrame)
   if (confettiInterval) clearInterval(confettiInterval)
   if (fireConfetti) fireConfetti.reset()
@@ -1080,6 +1111,16 @@ onUnmounted(() => {
   to { transform: translate(-50%, -50%) rotate(1turn); }
 }
 
+@keyframes spinRaysReverse {
+  to { transform: translate(-50%, -50%) rotate(-1turn); }
+}
+
+.light-rays-reverse {
+  animation: spinRays 20s linear infinite;
+  animation-delay: -1.7s;
+  opacity: 0.3;
+}
+
 
 /* Floating glow stars */
 .glow-star {
@@ -1097,7 +1138,7 @@ onUnmounted(() => {
   animation: starDrift1 5s ease-in-out infinite;
 }
 .glow-star-2 {
-  width: 70px; height: 70px;
+  width: 90px; height: 90px;
   top: 55%; right: 6%;
   animation: starDrift2 6s ease-in-out 0.3s infinite;
   background: #ffd700;
@@ -1109,21 +1150,68 @@ onUnmounted(() => {
   background: #ffec8b;
 }
 .glow-star-4 {
-  width: 55px; height: 55px;
+  width: 75px; height: 75px;
   bottom: 18%; left: 12%;
   animation: starDrift2 7s ease-in-out 0.9s infinite;
 }
 .glow-star-5 {
-  width: 30px; height: 30px;
+  width: 22px; height: 22px;
   top: 8%; right: 32%;
   animation: starDrift1 5s ease-in-out 0.4s infinite;
   background: #fff8dc;
 }
 .glow-star-6 {
-  width: 45px; height: 45px;
+  width: 60px; height: 60px;
   bottom: 12%; right: 28%;
   animation: starDrift2 5.5s ease-in-out 1.2s infinite;
   background: #ffd700;
+}
+.glow-star-7 {
+  width: 100px; height: 100px;
+  top: 5%; left: 35%;
+  animation: starDrift2 6.5s ease-in-out 0.2s infinite;
+  background: #f5c542;
+}
+.glow-star-8 {
+  width: 18px; height: 18px;
+  top: 42%; left: 4%;
+  animation: starDrift1 4s ease-in-out 1.5s infinite;
+  background: #fff8dc;
+}
+.glow-star-9 {
+  width: 80px; height: 80px;
+  bottom: 8%; left: 40%;
+  animation: starDrift2 5s ease-in-out 0.7s infinite;
+  background: #ffd700;
+}
+.glow-star-10 {
+  width: 28px; height: 28px;
+  top: 65%; right: 40%;
+  animation: starDrift1 4.8s ease-in-out 1s infinite;
+  background: #ffec8b;
+}
+.glow-star-11 {
+  width: 95px; height: 95px;
+  top: 20%; right: 5%;
+  animation: starDrift2 7.5s ease-in-out 0.5s infinite;
+}
+.glow-star-12 {
+  width: 40px; height: 40px;
+  bottom: 30%; right: 12%;
+  animation: starDrift1 5.2s ease-in-out 1.8s infinite;
+  background: #fff8dc;
+}
+.glow-star-13 {
+  width: 85px; height: 85px;
+  bottom: 5%; right: 50%;
+  animation: starDrift2 6s ease-in-out 1.4s infinite;
+  background: #ffd700;
+}
+.glow-star-14 {
+  width: 25px; height: 25px;
+  top: 75%; left: 25%;
+  animation: starDrift1 4.2s ease-in-out 2s infinite;
+  background: #ffec8b;
 }
 
 @keyframes starDrift1 {

@@ -2,7 +2,7 @@
   <div class="kanban-backdrop" @mousedown.self="backdropDown = true" @mouseup.self="onBackdropUp">
     <div class="kanban-panel">
       <button class="kanban-close" @click="$emit('close')" title="Close"><MdiIcon :path="mdiClose" :size="18" /></button>
-      <h2 class="kanban-title" data-text="KANBAN!">KANBAN!</h2>
+      <h2 class="kanban-title" data-text="KANBAN!" @click="sayKanban">KANBAN!</h2>
 
       <div class="kanban-columns">
         <div
@@ -119,16 +119,16 @@ function onDrop(targetLabel) {
 }
 
 function sayKanban() {
-  if ('speechSynthesis' in window) {
-    const utter = new SpeechSynthesisUtterance('KAHN-BAUN!')
-    utter.pitch = 0
-    utter.rate = 0.4
-    utter.volume = 0.7
-    const voices = speechSynthesis.getVoices()
-    const robot = voices.find(v => /zira|google uk|daniel|zarvox|alex/i.test(v.name))
-    if (robot) utter.voice = robot
-    speechSynthesis.speak(utter)
-  }
+  if (!('speechSynthesis' in window)) return
+  const isEaster = Math.random() < 0.05
+  const text = isEaster ? 'four hundred and ninety eight octillion' : 'KAHN-BAUN!'
+  const utter = new SpeechSynthesisUtterance(text)
+  utter.pitch = 0.3 + Math.random() * 1.7    // 0.3–2.0
+  utter.rate = 0.5 + Math.random() * 1.0     // 0.5–1.5
+  utter.volume = 0.6 + Math.random() * 0.4   // 0.6–1.0
+  const voices = speechSynthesis.getVoices()
+  if (voices.length) utter.voice = voices[Math.floor(Math.random() * voices.length)]
+  speechSynthesis.speak(utter)
 }
 
 function celebrate() {
@@ -300,8 +300,8 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.8rem 1rem;
-  font-size: 0.85rem;
+  padding: 1rem 1.25rem;
+  font-size: 1.3rem;
   font-weight: 600;
   color: rgba(255,255,255,0.6);
   border-bottom: 1px solid #222;
@@ -309,15 +309,15 @@ onUnmounted(() => {
 }
 
 .kanban-col-dot {
-  width: 8px;
-  height: 8px;
+  width: 10px;
+  height: 10px;
   border-radius: 50%;
 }
 
 .kanban-col-count {
   margin-left: auto;
   color: rgba(255,255,255,0.3);
-  font-size: 0.75rem;
+  font-size: 1.1rem;
 }
 
 .kanban-col-body {
@@ -370,7 +370,7 @@ onUnmounted(() => {
 }
 
 .kanban-card-artist {
-  font-size: 0.7rem;
+  font-size: 1.05rem;
   color: rgba(255,255,255,0.35);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -378,7 +378,7 @@ onUnmounted(() => {
 }
 
 .kanban-card-track {
-  font-size: 0.85rem;
+  font-size: 1.3rem;
   color: rgba(255,255,255,0.8);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -389,7 +389,7 @@ onUnmounted(() => {
   color: rgba(255,255,255,0.2);
   text-align: center;
   padding: 2rem 1rem;
-  font-size: 0.8rem;
+  font-size: 1.1rem;
 }
 
 .confetti-canvas {

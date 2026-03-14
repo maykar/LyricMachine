@@ -49,17 +49,18 @@
 - **Export/Import** — download favorites as JSON, import with merge (dedup by title) — exists in BOTH LibraryOverlay and FavoritesOverlay
 - New song creation form (artist + track + lyrics)
 - **Drag-and-drop reorder** — reorder favorites by dragging cards
-- Context menu — right-click for label change, played toggle, edit play count, delete
+- Context menu — right-click for label change, played toggle, edit play count, clear count, delete; Ctrl+right-click for native browser menu
 - Filters — unplayed, no chords, by label (Fresh/Getting There/In Setlist)
 - Sort — by label or play count, ascending/descending toggle
-- Paginated 3-column card grid with dynamic row count based on viewport
+- Paginated 4-column card grid with dynamic row count based on viewport
+- Word-boundary truncation — card text truncates at clean word boundaries, never leaving trailing spaces
 
 ### Song Management
 - Three labels — Fresh (red), Getting There (yellow), In Setlist (green)
 - Play tracking — toggle played status, increment play count, display count
 - Per-song settings — font size offset, merge, separators, alt colors (all saved per favorite)
-- Kanban board — drag songs between label columns, confetti + party sound + "KANBAN!" speech
-- Song randomizer — slot-machine carousel with tick sounds, Spotify preload/autoplay, gold confetti, impact sound, light rays, fireworks, glow stars
+- Kanban board — drag songs between label columns, confetti + party sound; click title for randomized TTS "KANBAN!" (5% chance Easter egg phrase), random voice/pitch/rate
+- Song randomizer — slot-machine carousel with tick sounds, Spotify preload/autoplay, gold confetti, impact sound, light rays, fireworks, glow stars; Space to spin
 
 ### Playback
 - Spotify player — embedded iframe, auto-lookup track ID
