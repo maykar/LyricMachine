@@ -553,7 +553,7 @@ onMounted(() => {
   getAudioCtx()
 
   // Preload impact sound
-  fetch('/special.wav')
+  fetch('/special.ogg')
     .then(r => r.arrayBuffer())
     .then(buf => getAudioCtx().decodeAudioData(buf))
     .then(decoded => { impactBuffer = decoded })

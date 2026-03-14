@@ -177,8 +177,8 @@ onMounted(() => {
     fireConfetti = confettiModule.create(confettiCanvas.value, { resize: true })
   }
 
-  /* Preload party.wav */
-  fetch('/party.wav')
+  /* Preload party sound */
+  fetch('/party.ogg')
     .then(r => r.arrayBuffer())
     .then(buf => {
       const ctx = new (window.AudioContext || window.webkitAudioContext)()
