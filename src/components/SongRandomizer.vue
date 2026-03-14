@@ -2,7 +2,7 @@
   <div class="overlay-backdrop randomizer-overlay" @mousedown.self="backdropDown = true" @mouseup.self="onBackdropUp">
     <div v-if="landed" class="light-rays"></div>
     <div v-if="landed" class="light-rays light-rays-reverse"></div>
-    <div class="randomizer-modal">
+    <div class="randomizer-modal" :class="{ 'modal-hidden': landed }">
       <!-- Close button -->
       <button class="randomizer-close" @click="$emit('close')" title="Close"><MdiIcon :path="mdiClose" :size="18" /></button>
 
@@ -45,23 +45,12 @@
               'is-winner': landed && i === winnerRenderIndex,
               'is-dimmed': landed && i !== winnerRenderIndex,
             }"
-            :style="{ width: cardWidth + 'px' }"
+            :style="{ width: (landed && i === winnerRenderIndex ? cardWidth * 2 : cardWidth) + 'px' }"
             @click="landed && i === winnerRenderIndex && $emit('select', item.fav)"
           >
             <!-- Winner celebration layers -->
             <template v-if="landed && i === winnerRenderIndex">
               <div class="shimmer-overlay"></div>
-              <div class="pulse-ring"></div>
-              <div class="star star-1">★</div>
-              <div class="star star-2">★</div>
-              <div class="star star-3">✦</div>
-              <div class="star star-4">★</div>
-              <div class="star star-5">✦</div>
-              <div class="star star-6">★</div>
-              <div class="sparkle sparkle-1">✧</div>
-              <div class="sparkle sparkle-2">✧</div>
-              <div class="sparkle sparkle-3">✧</div>
-              <div class="sparkle sparkle-4">✧</div>
             </template>
             <div class="carousel-card-inner">
               <img v-if="item.albumArt" :src="item.albumArt" class="carousel-card-art" alt="" />
@@ -87,8 +76,9 @@
         </div>
       </div>
 
-      <!-- Spin button -->
+      <!-- Spin / Spin Again button -->
       <button
+        v-if="!landed"
         class="spin-btn"
         @mousedown="onSpinBtnDown"
         @mouseup="onSpinBtnUp"
@@ -96,6 +86,13 @@
         :disabled="isSpinning || filteredFavorites.length < 2"
       >
         SPIN
+      </button>
+      <button
+        v-else
+        class="spin-btn spin-again-btn"
+        @click="onSpinClick"
+      >
+        SPIN AGAIN
       </button>
     </div>
 
@@ -199,8 +196,28 @@ const filteredFavorites = computed(() => {
   return list.length >= 2 ? list : props.favorites
 })
 
+// Shuffle bag: track recently picked songs, reset daily
+const recentWinners = new Set()
+let recentWinnersDate = new Date().toDateString()
+
+function checkDailyReset() {
+  const today = new Date().toDateString()
+  if (today !== recentWinnersDate) {
+    recentWinners.clear()
+    recentWinnersDate = today
+  }
+}
+
 function reshuffleCards() {
-  shuffled.value = shuffle(filteredFavorites.value)
+  checkDailyReset()
+  // Exclude recent winners from the pool
+  let pool = filteredFavorites.value.filter(f => !recentWinners.has(f.title))
+  // If all songs have been picked, reset the bag
+  if (pool.length < 2) {
+    recentWinners.clear()
+    pool = filteredFavorites.value
+  }
+  shuffled.value = shuffle(pool)
 }
 
 watch(activeFilters, () => {
@@ -229,6 +246,21 @@ const trackOffset = ref(0)
 const isSpinning = ref(false)
 const landed = ref(false)
 const winnerRenderIndex = ref(-1)
+
+const winnerFav = computed(() => {
+  if (!landed.value || winnerRenderIndex.value < 0) return null
+  return renderCards.value[winnerRenderIndex.value]?.fav || null
+})
+const winnerArtist = computed(() => {
+  if (!winnerFav.value) return ''
+  const sep = winnerFav.value.title.indexOf(' — ')
+  return sep >= 0 ? winnerFav.value.title.substring(0, sep) : ''
+})
+const winnerTrack = computed(() => {
+  if (!winnerFav.value) return ''
+  const sep = winnerFav.value.title.indexOf(' — ')
+  return sep >= 0 ? winnerFav.value.title.substring(sep + 3) : winnerFav.value.title
+})
 
 let animFrame = null
 
@@ -306,6 +338,19 @@ function onSpinClick() {
   if (isSpinning.value) return
 
   landed.value = false
+  if (land._resizeHandler) {
+    window.removeEventListener('resize', land._resizeHandler)
+    land._resizeHandler = null
+  }
+  if (land._holoFrame) {
+    cancelAnimationFrame(land._holoFrame)
+    land._holoFrame = null
+  }
+  // Clear inline styles from previous winner
+  const prevWinner = document.querySelector('.carousel-card.is-winner')
+  if (prevWinner) {
+    prevWinner.style.transform = ''
+  }
   winnerRenderIndex.value = -1
   spotifyId.value = null
   if (_sp.ctrl) { try { _sp.ctrl.pause() } catch {} }
@@ -421,8 +466,78 @@ function onSpinClick() {
 
 function land() {
   isSpinning.value = false
-  landed.value = true
   playImpact()
+
+  // PRE-COMPUTE centered position BEFORE setting landed
+  // so the card is already at the right spot when Vue updates the DOM
+  function recenterWinner() {
+    const screenCenter = window.innerWidth / 2 - cardWidth / 2
+    const winnerPos = winnerRenderIndex.value * cardStep
+    trackOffset.value = screenCenter - winnerPos
+  }
+  recenterWinner()          // set position FIRST
+  landed.value = true       // THEN trigger DOM update
+
+  // Record this win in the shuffle bag
+  const winnerCard = renderCards.value[winnerRenderIndex.value]
+  if (winnerCard) recentWinners.add(winnerCard.title)
+
+  window.addEventListener('resize', recenterWinner)
+  land._resizeHandler = recenterWinner
+
+  // Drive holographic shimmer + 3D tilt (no delay needed)
+  const FLOAT_DURATION = 6000
+  const startTime = performance.now()
+  let holoFrame = null
+
+  function updateHolo() {
+    const elapsed = performance.now() - startTime
+
+    // Get winner element for transform updates
+    const winnerEl = document.querySelector('.carousel-card.is-winner')
+
+    const t = (elapsed % FLOAT_DURATION) / FLOAT_DURATION
+    const smooth = p => p * p * (3 - 2 * p) // smoothstep
+    let ry, rx
+    if (t < 0.15) {
+      const p = smooth(t / 0.15); ry = 33 * p; rx = -10 * p
+    } else if (t < 0.30) {
+      const p = smooth((t - 0.15) / 0.15); ry = 33 + (7 - 33) * p; rx = -10 + (16 + 10) * p
+    } else if (t < 0.50) {
+      const p = smooth((t - 0.30) / 0.20); ry = 7 + (-33 - 7) * p; rx = 16 + (-13 - 16) * p
+    } else if (t < 0.70) {
+      const p = smooth((t - 0.50) / 0.20); ry = -33 + (-10 + 33) * p; rx = -13 + (10 + 13) * p
+    } else if (t < 0.85) {
+      const p = smooth((t - 0.70) / 0.15); ry = -10 + (20 + 10) * p; rx = 10 + (-7 - 10) * p
+    } else {
+      const p = smooth((t - 0.85) / 0.15); ry = 20 * (1 - p); rx = -7 * (1 - p)
+    }
+
+    // Apply card tilt (no scale — card is physically 400px)
+    // During first 500ms, add a 360° flat spin (rotateZ) for the zoom entrance
+    if (winnerEl) {
+      const SPIN_DURATION = 1000
+      const spinElapsed = performance.now() - startTime
+      let rz = 0
+      if (spinElapsed < SPIN_DURATION) {
+        const sp = spinElapsed / SPIN_DURATION
+        rz = 360 * (1 - Math.pow(1 - sp, 3)) // ease-out cubic
+      }
+      winnerEl.style.transform = `perspective(600px) rotateY(${ry}deg) rotateX(${rx}deg) rotateZ(${rz}deg)`
+    }
+
+    // Apply shimmer position (same values = perfect sync)
+    const holoX = 50 + ry * 1.5
+    const holoY = 50 + rx * 2
+    const els = document.querySelectorAll('.shimmer-overlay')
+    for (const el of els) {
+      el.style.setProperty('--holo-x', holoX + '%')
+      el.style.setProperty('--holo-y', holoY + '%')
+    }
+    holoFrame = requestAnimationFrame(updateHolo)
+  }
+  holoFrame = requestAnimationFrame(updateHolo)
+  land._holoFrame = holoFrame
 
   /* Play Spotify if not already triggered by early-play */
   if (!spotifyPlayTriggered && _sp.ctrl && _sp.ready) {
@@ -451,7 +566,7 @@ function land() {
   fireConfetti({ particleCount: 60, spread: 160, origin: { y: 0.5, x: 0.5 }, colors: goldColors, shapes: ['star'], scalar: 0.9, startVelocity: 35 })
   fireConfetti({ particleCount: 40, angle: 60,  spread: 80, origin: { y: 1, x: 0.15 }, colors: goldColors, startVelocity: 50 })
   fireConfetti({ particleCount: 40, angle: 120, spread: 80, origin: { y: 1, x: 0.85 }, colors: goldColors, startVelocity: 50 })
-  fireConfetti({ particleCount: 300, spread: 360, origin: { y: 0.5, x: 0.5 }, colors: goldColors, gravity: 0, scalar: 1, startVelocity: 20, drift: 0, ticks: 3000, decay: 0.97 })
+  fireConfetti({ particleCount: 300, spread: 360, origin: { y: 0.5, x: 0.5 }, colors: goldColors, gravity: 0, scalar: 1, startVelocity: 20, drift: 0, ticks: 600000, decay: 0.97 })
 
 }
 
@@ -637,6 +752,48 @@ onUnmounted(() => {
   overflow: hidden;
 }
 
+.randomizer-modal.modal-hidden {
+  background: transparent;
+  border-color: transparent;
+  overflow: visible;
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  border-radius: 0;
+  padding: 0;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.randomizer-modal.modal-hidden .carousel-card.is-winner,
+.randomizer-modal.modal-hidden .spin-btn {
+  pointer-events: auto;
+}
+
+.randomizer-modal.modal-hidden .randomizer-close,
+.randomizer-modal.modal-hidden .randomizer-filter,
+.randomizer-modal.modal-hidden .placeholder-card-wrap,
+.randomizer-modal.modal-hidden .carousel-viewport::before,
+.randomizer-modal.modal-hidden .carousel-viewport::after {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.randomizer-modal.modal-hidden .spin-btn {
+  position: absolute;
+  bottom: 6rem;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.spin-again-btn {
+  border-color: #f5c542 !important;
+  color: #f5c542 !important;
+}
+
 .randomizer-close {
   position: absolute;
   top: 0.75rem;
@@ -773,6 +930,7 @@ onUnmounted(() => {
   cursor: default;
   user-select: none;
   overflow: hidden;
+  transition: width 1s cubic-bezier(0.34, 1.56, 0.64, 1), margin 1s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .carousel-card.is-winner {
@@ -780,26 +938,29 @@ onUnmounted(() => {
   background: linear-gradient(135deg, #1e1a0e 0%, #2a1f08 50%, #1e1a0e 100%);
   cursor: pointer;
   z-index: 2;
-  animation: winnerEntrance 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) forwards, winnerGlow 2s ease-in-out 0.5s infinite;
+  animation: winnerGlow 2s ease-in-out infinite;
   position: relative;
   overflow: visible;
+  box-shadow: 0 0 24px rgba(245, 197, 66, 0.25), 0 0 60px rgba(245, 197, 66, 0.05), 0 20px 60px rgba(0, 0, 0, 0.7);
+  margin-left: -100px;
+  margin-right: -100px;
 }
 
 .carousel-card.is-winner:hover {
-  transform: scale(1.45);
   box-shadow: 0 0 50px rgba(245, 197, 66, 0.5);
 }
 
 .carousel-card.is-dimmed {
-  opacity: 0.2;
-  filter: blur(4px);
-  transition: opacity 0.4s ease;
+  opacity: 0;
+  visibility: hidden;
 }
 
-@keyframes winnerEntrance {
-  0% { transform: scale(1); box-shadow: none; border-color: #2a2a2a; }
-  50% { transform: scale(1.5); }
-  100% { transform: scale(1.4); box-shadow: 0 0 30px rgba(245, 197, 66, 0.3), 0 20px 60px rgba(0, 0, 0, 0.7); border-color: #f5c542; }
+.is-winner .carousel-card-artist {
+  font-size: 1.4rem;
+}
+
+.is-winner .carousel-card-track {
+  font-size: 1.8rem;
 }
 
 @keyframes winnerGlow {
@@ -807,30 +968,23 @@ onUnmounted(() => {
   50% { box-shadow: 0 0 40px rgba(245, 197, 66, 0.45), 0 0 80px rgba(245, 197, 66, 0.15), 0 20px 60px rgba(0, 0, 0, 0.7); }
 }
 
+
+
 /* Shimmer sweep */
 .shimmer-overlay {
   position: absolute;
   inset: 0;
   border-radius: 10px;
-  overflow: hidden;
   pointer-events: none;
   z-index: 3;
-}
-
-.shimmer-overlay::after {
-  content: '';
-  position: absolute;
-  top: -50%;
-  left: -100%;
-  width: 60%;
-  height: 200%;
-  background: linear-gradient(105deg, transparent 40%, rgba(255, 223, 100, 0.15) 45%, rgba(255, 255, 255, 0.25) 50%, rgba(255, 223, 100, 0.15) 55%, transparent 60%);
-  animation: shimmerSweep 2.5s ease-in-out infinite;
-}
-
-@keyframes shimmerSweep {
-  0% { left: -100%; }
-  100% { left: 200%; }
+  mix-blend-mode: color-dodge;
+  opacity: 0.6;
+  background:
+    linear-gradient(105deg, transparent 40%, rgba(255, 219, 112, 0.4) 45%, rgba(194, 153, 255, 0.3) 50%, transparent 54%),
+    linear-gradient(-25deg, transparent 30%, rgba(184, 255, 252, 0.4) 40%, rgba(255, 184, 224, 0.3) 50%, transparent 60%),
+    radial-gradient(circle at bottom left, rgba(170, 255, 243, 0.35) 0%, transparent 50%);
+  background-size: 250% 250%;
+  background-position: var(--holo-x, 50%) var(--holo-y, 50%);
 }
 
 /* Pulse ring */
@@ -977,6 +1131,8 @@ onUnmounted(() => {
   border-radius: 6px;
   object-fit: cover;
   flex-shrink: 0;
+  position: relative;
+  z-index: 4;
 }
 
 .carousel-card-text {
@@ -1011,6 +1167,7 @@ onUnmounted(() => {
 
 /* Spin button */
 .spin-btn {
+  margin-top: auto;
   padding: 0.85rem 3.5rem;
   min-width: 180px;
   font-size: 1.1rem;
@@ -1073,7 +1230,7 @@ onUnmounted(() => {
   width: 100%;
   height: 100%;
   pointer-events: none;
-  z-index: 10;
+  z-index: 1;
 }
 
 /* Full-screen celebration effects */
@@ -1081,7 +1238,7 @@ onUnmounted(() => {
   position: fixed;
   inset: 0;
   pointer-events: none;
-  z-index: 5;
+  z-index: 1;
   overflow: hidden;
 }
 

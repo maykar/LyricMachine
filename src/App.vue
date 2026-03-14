@@ -60,10 +60,11 @@
         @alt-colors-changed="onAltColorsChanged"
       />
 
-      <div v-else class="empty-state">
-        <img src="/SloshRat.png" alt="Slosh Rat" class="slosh-rat" /><br><br><br>
-        <div class="hint">Press Space to search</div>
-      </div>
+      <Dashboard
+        v-else
+        :favorites="dashFavorites"
+        @select="onSongSelect"
+      />
     </div>
 
     <!-- Chord Drawer -->
@@ -97,7 +98,7 @@
     <LibraryOverlay
       v-if="showLibrary"
       @select="onSongSelect"
-      @close="showLibrary = false"
+      @close="showLibrary = false; refreshDashboard()"
       @updated="refreshCurrentSong"
       @defaults-changed="onDefaultsChanged"
       @toggle-settings="showSettings = !showSettings"
@@ -113,6 +114,7 @@ import TopBar from './components/TopBar.vue'
 import SettingsDropdown from './components/SettingsDropdown.vue'
 import ChordDrawer from './components/ChordDrawer.vue'
 import SpotifyPlayer from './components/SpotifyPlayer.vue'
+import Dashboard from './components/Dashboard.vue'
 
 import { useFavorites } from './composables/useFavorites.js'
 import { useSettings } from './composables/useSettings.js'
@@ -157,6 +159,11 @@ const lyricsRef = ref(null)
 const editingLyrics = ref(false)
 const editLyricsText = ref('')
 const editTextarea = ref(null)
+const dashFavorites = ref([])
+
+function refreshDashboard() {
+  dashFavorites.value = getFavorites()
+}
 
 // --- Keyboard shortcuts ---
 useKeyboard({
@@ -180,6 +187,7 @@ function onSongSelect({ title, lyrics, fontAdjust: fa, merge, separators, altCol
   songAltColors.value = altColors !== undefined ? altColors : userDefaults.value.altColors
   showLibrary.value = false
   refreshCurrentSong()
+  refreshDashboard()
   fetchChords(title)
 }
 
@@ -306,7 +314,11 @@ watch(showLibrary, (val) => {
 // --- Lifecycle ---
 onMounted(() => {
   loadUserDefaults()
-  syncPlaylist().then(() => backfillAlbumArt())
+  refreshDashboard()
+  syncPlaylist().then(() => {
+    backfillAlbumArt()
+    refreshDashboard()
+  })
 })
 
 onUnmounted(() => {

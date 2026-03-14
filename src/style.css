@@ -63,6 +63,8 @@ html, body {
   inset: 0;
   z-index: 200;
   background: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   display: flex;
   align-items: center;
   justify-content: center;
