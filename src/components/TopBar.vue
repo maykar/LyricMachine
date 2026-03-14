@@ -1,0 +1,265 @@
+<template>
+  <!-- Top-left: font size controls -->
+  <div v-if="!editingLyrics && hasLyrics" class="top-left-group">
+    <button class="edit-action-btn" @click="$emit('adjust-font', -1)" title="Decrease font"><MdiIcon :path="mdiMinus" :size="16" /></button>
+    <button class="edit-action-btn" @click="$emit('reset-font')" title="Reset font"><MdiIcon :path="mdiRefresh" :size="16" /></button>
+    <button class="edit-action-btn" @click="$emit('adjust-font', 1)" title="Increase font"><MdiIcon :path="mdiPlus" :size="16" /></button>
+  </div>
+
+  <!-- Top-right: edit + search + played + label + star + page indicator -->
+  <div v-if="hasTitle" class="top-right-group">
+    <template v-if="editingLyrics">
+      <button class="edit-action-btn save" @click="$emit('save-edit')" title="Save"><MdiIcon :path="mdiCheck" :size="16" /> Save</button>
+      <button class="edit-action-btn cancel" @click="$emit('cancel-edit')" title="Cancel"><MdiIcon :path="mdiClose" :size="16" /> Cancel</button>
+    </template>
+    <template v-else>
+      <button class="edit-action-btn" @click="$emit('enter-edit')" title="Edit lyrics"><MdiIcon :path="mdiPencil" :size="18" /></button>
+      <button class="edit-action-btn" @click="$emit('open-library')" title="Search"><MdiIcon :path="mdiMagnify" :size="18" /></button>
+      <button
+        v-if="isSaved"
+        class="edit-action-btn played-btn"
+        :class="{ checked: currentPlayed }"
+        title="Toggle played"
+        @click="$emit('toggle-played')"
+      >
+        <span class="played-icon-inline" :class="{ checked: currentPlayed }"><MdiIcon :path="mdiCheck" :size="12" /></span>
+        <span v-if="currentPlayCount" class="played-count-inline">{{ currentPlayCount }}</span>
+      </button>
+      <div v-if="isSaved" class="label-wrapper">
+        <button
+          class="edit-action-btn label-circle-btn"
+          title="Set label"
+          @click.stop="showLabelMenu = !showLabelMenu"
+        >
+          <span class="label-circle" :style="{ background: labelColor }"></span>
+        </button>
+        <div v-if="showLabelMenu" class="label-menu" @click.stop>
+          <button
+            v-for="opt in labelOptions" :key="opt.value"
+            class="label-option"
+            :class="{ active: currentLabel === opt.value }"
+            :style="{ '--lbl-color': opt.color }"
+            @click="$emit('set-label', opt.value); showLabelMenu = false"
+          >
+            <span class="label-dot" :style="{ background: opt.color }"></span>
+            {{ opt.name }}
+          </button>
+        </div>
+      </div>
+      <StarButton
+        :is-saved="isSaved"
+        @toggle="$emit('toggle-star')"
+      />
+    </template>
+    <span
+      v-if="!editingLyrics && totalPages > 1"
+      class="page-indicator"
+    >{{ currentPage }} / {{ totalPages }}</span>
+  </div>
+</template>
+
+<script setup>
+import { ref, computed, onMounted, onUnmounted } from 'vue'
+import StarButton from './StarButton.vue'
+import MdiIcon from './MdiIcon.vue'
+import { mdiMinus, mdiPlus, mdiRefresh, mdiPencil, mdiMagnify, mdiCheck, mdiClose } from '@mdi/js'
+
+const props = defineProps({
+  editingLyrics: { type: Boolean, default: false },
+  hasLyrics: { type: Boolean, default: false },
+  hasTitle: { type: Boolean, default: false },
+  isSaved: { type: Boolean, default: false },
+  currentLabel: { type: String, default: null },
+  currentPlayed: { type: Boolean, default: false },
+  currentPlayCount: { type: Number, default: 0 },
+  totalPages: { type: Number, default: 1 },
+  currentPage: { type: Number, default: 1 },
+})
+
+defineEmits([
+  'adjust-font', 'reset-font',
+  'save-edit', 'cancel-edit', 'enter-edit',
+  'open-library', 'toggle-settings', 'toggle-star',
+  'set-label', 'toggle-played',
+])
+
+const showLabelMenu = ref(false)
+
+const labelOptions = [
+  { value: 'fresh', name: 'Fresh', color: '#e74c3c' },
+  { value: 'getting-there', name: 'Getting There', color: '#f1c40f' },
+  { value: 'in-setlist', name: 'In Setlist', color: '#2ecc71' },
+]
+
+const labelColor = computed(() => {
+  const opt = labelOptions.find(o => o.value === props.currentLabel)
+  return opt ? opt.color : 'rgba(255,255,255,0.15)'
+})
+
+function closeLabelMenu() { showLabelMenu.value = false }
+onMounted(() => document.addEventListener('click', closeLabelMenu))
+onUnmounted(() => document.removeEventListener('click', closeLabelMenu))
+</script>
+
+<style scoped>
+.top-right-group {
+  position: fixed;
+  top: 0;
+  right: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  background: #1a1a1a;
+  padding: 0.55rem 1rem 0.55rem 1rem;
+  border-bottom-left-radius: 10px;
+}
+
+.top-left-group {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: #1a1a1a;
+  padding: 0.55rem 1rem;
+  border-bottom-right-radius: 10px;
+}
+
+.edit-action-btn {
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.35);
+  font-size: 0.95rem;
+  padding: 0.1rem 0.3rem;
+  cursor: pointer;
+  transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.edit-action-btn:hover {
+  color: #f5c542;
+}
+
+.edit-action-btn.save {
+  color: #2ecc71;
+}
+
+.edit-action-btn.save:hover {
+  color: #27ae60;
+}
+
+.edit-action-btn.cancel {
+  color: rgba(255, 255, 255, 0.3);
+}
+
+.edit-action-btn.cancel:hover {
+  color: #e74c3c;
+}
+
+.page-indicator {
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.4);
+  letter-spacing: 0.08em;
+  user-select: none;
+}
+
+.label-wrapper {
+  position: relative;
+}
+
+.label-circle-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.15rem !important;
+}
+
+.label-circle {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(255,255,255,0.15);
+  transition: background 0.2s;
+}
+
+.label-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 0.3rem;
+  background: rgba(30, 30, 30, 0.95);
+  backdrop-filter: blur(10px);
+  border: 1px solid #333;
+  border-radius: 8px;
+  padding: 0.3rem;
+  min-width: 160px;
+  z-index: 200;
+}
+
+.label-option {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  background: none;
+  border: none;
+  color: rgba(255,255,255,0.7);
+  padding: 0.4rem 0.6rem;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+.label-option:hover {
+  background: rgba(255,255,255,0.08);
+  color: #fff;
+}
+
+.label-option.active {
+  color: var(--lbl-color, #2ecc71);
+  font-weight: 600;
+}
+
+.label-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.played-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.played-icon-inline {
+  width: 16px;
+  height: 16px;
+  border: 1.5px solid #444;
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: transparent;
+  transition: all 0.15s;
+}
+
+.played-icon-inline.checked {
+  color: #2ecc71;
+  border-color: rgba(46, 204, 113, 0.4);
+  background: rgba(46, 204, 113, 0.1);
+}
+
+.played-count-inline {
+  font-size: 0.85rem;
+  color: rgba(255,255,255,0.35);
+  line-height: 1;
+}
+</style>
