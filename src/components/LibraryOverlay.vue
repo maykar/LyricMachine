@@ -71,8 +71,9 @@
           </div>
           <button v-if="favorites.some(f => f.played > 0)" class="action-btn" @click="resetAllPlayed" title="Clear all played"><MdiIcon :path="mdiRefresh" :size="32" /></button>
           <button v-if="favorites.length" class="action-btn" :class="{ active: showKanban }" @click="showKanban = !showKanban" title="Kanban View"><MdiIcon :path="mdiViewColumn" :size="32" /></button>
-          <button v-if="favorites.length >= 2" class="action-btn" @click="showRandomizer = true" title="Randomize"><MdiIcon :path="mdiDice5" :size="32" /></button>
+          <button v-if="favorites.length >= 2" class="action-btn" @click="$emit('open-randomizer')" title="Randomize"><MdiIcon :path="mdiDice5" :size="32" /></button>
           <button class="action-btn" @click="$emit('toggle-settings')" title="Settings"><MdiIcon :path="mdiCog" :size="32" /></button>
+          <button class="action-btn" @click="$emit('go-home')" title="Dashboard"><MdiIcon :path="mdiHome" :size="32" /></button>
         </span>
       </div>
 
@@ -184,13 +185,7 @@
         @change="importFavorites"
       />
 
-      <!-- Song Randomizer modal -->
-      <SongRandomizer
-        v-if="showRandomizer"
-        :favorites="favorites"
-        @select="onRandomizerSelect"
-        @close="showRandomizer = false"
-      />
+
 
       <!-- Kanban View -->
       <KanbanView
@@ -237,19 +232,22 @@
 
 <script setup>
 import { ref, reactive, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
-import SongRandomizer from './SongRandomizer.vue'
 import KanbanView from './KanbanView.vue'
 import MdiIcon from './MdiIcon.vue'
 import {
   mdiPlus, mdiDownload, mdiUpload, mdiFilterVariant, mdiRefresh,
   mdiViewColumn, mdiDice5, mdiCog, mdiChevronLeft, mdiChevronRight,
-  mdiCheck, mdiPencil, mdiDelete, mdiSort,
+  mdiCheck, mdiPencil, mdiDelete, mdiSort, mdiHome,
 } from '@mdi/js'
 
 const STORAGE_KEY = 'lyricmachine_favorites'
 const DEFAULTS_KEY = 'lyricmachine_defaults'
 
-const emit = defineEmits(['close', 'select', 'updated', 'defaults-changed', 'toggle-settings'])
+const props = defineProps({
+  initialKanban: { type: Boolean, default: false },
+})
+
+const emit = defineEmits(['close', 'go-home', 'select', 'updated', 'defaults-changed', 'toggle-settings', 'open-randomizer'])
 
 const query = ref('')
 const inputRef = ref(null)
@@ -257,8 +255,7 @@ const favContainerRef = ref(null)
 const backdropMouseDown = ref(false)
 const showSettings = ref(false)
 const showNewSong = ref(false)
-const showRandomizer = ref(false)
-const showKanban = ref(false)
+const showKanban = ref(props.initialKanban)
 const hidePlayed = ref(JSON.parse(localStorage.getItem('lm_filter_hidePlayed') || 'false'))
 const filterNoChords = ref(JSON.parse(localStorage.getItem('lm_filter_noChords') || 'false'))
 const filterFresh = ref(false)
@@ -463,10 +460,6 @@ function onBackdropUp() {
   backdropMouseDown.value = false
 }
 
-function onRandomizerSelect(fav) {
-  showRandomizer.value = false
-  emit('select', fav)
-}
 
 function truncate(str, chars) {
   if (!str || str.length <= chars) return str
@@ -711,27 +704,40 @@ function selectResult(result) {
 }
 
 // --- Init ---
+function onLibraryKeydown(e) {
+  if (e.ctrlKey || e.altKey || e.metaKey) return
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return
+  if (e.key === 'r' || e.key === 'R') {
+    e.preventDefault()
+    emit('open-randomizer')
+  }
+}
+
 onMounted(async () => {
   loadFavorites()
   loadDefaults()
-  inputRef.value?.focus()
+  if (!props.initialKanban) {
+    inputRef.value?.focus()
+  }
 
   // Measure container to calculate how many rows fit
   await nextTick()
   const el = favContainerRef.value
   if (el) {
-    // Subtract header (~40px) and page nav (~50px) from available height
     const available = el.clientHeight - 90
     rowsPerPage.value = Math.max(2, Math.floor(available / CARD_HEIGHT) - 2)
   }
 
+
   document.addEventListener('click', closeFilterDropdown)
   document.addEventListener('click', closeContextMenu)
+  document.addEventListener('keydown', onLibraryKeydown)
 })
 
 onBeforeUnmount(() => {
   document.removeEventListener('click', closeFilterDropdown)
   document.removeEventListener('click', closeContextMenu)
+  document.removeEventListener('keydown', onLibraryKeydown)
 })
 </script>
 

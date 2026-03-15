@@ -52,7 +52,7 @@ LyricMachine helps musicians display song lyrics, chords, and Spotify playback d
 │       ├── useChords.js     # Chord fetching from saved data, Spotify track ID lookup + cache, chord editing + reset
 │       ├── useUGImport.js   # UG bookmarklet import polling (2s interval, 2min timeout)
 │       ├── usePlaylistSync.js# Spotify playlist sync with title normalization, lyrics auto-fetch from lrclib, album art backfill
-│       └── useKeyboard.js   # Global keyboard shortcuts (Space/T/C/P/Escape, context-aware)
+│       └── useKeyboard.js   # Global keyboard shortcuts (Space/Escape/R/T/C/P, context-aware navigation)
 └── public/
     ├── SloshRat.png         # Mascot image
     ├── party.ogg            # Kanban celebration sound
@@ -116,18 +116,20 @@ See `.env.example` for required variables. Never commit `.env`.
 - **Spotify track ID caching** — cached to favorites to avoid repeated API calls
 
 ### Keyboard Shortcuts
-| Key | Action |
-|-----|--------|
-| `Space` | Open/close library (spin when randomizer is open) |
-| `T` | Open UG search + start import poll |
-| `C` | Toggle chord drawer |
-| `P` | Toggle Spotify player |
-| `M` | Toggle line merging |
-| `L` | Toggle section separators |
-| `H` | Toggle alternating colors |
-| `+` / `-` | Adjust font size |
-| `← →` / `↑ ↓` | Navigate pages |
-| `Escape` | Close overlays |
+| Key | Dashboard | Lyrics | Library | Randomizer |
+|-----|-----------|--------|---------|------------|
+| `Space` | → Library | → Library | *(disabled)* | Spin |
+| `Escape` | *(nothing)* | → Library | → Dashboard | → Library |
+| `R` | → Randomizer | → Randomizer | → Randomizer | *(disabled)* |
+| `T` | — | UG import | — | — |
+| `C` | — | Toggle chords | — | — |
+| `P` | — | Toggle Spotify | — | — |
+| `M` | — | Toggle merge | — | — |
+| `L` | — | Toggle separators | — | — |
+| `H` | — | Toggle alt colors | — | — |
+| `+` / `-` | — | Adjust font | — | — |
+| `← → ↑ ↓` | — | Navigate pages | — | — |
+| `Enter` | — | — | — | Select winner |
 
 ## Production
 
@@ -135,3 +137,7 @@ See `.env.example` for required variables. Never commit `.env`.
 npm run build               # Build to dist/
 npm start                   # Express serves dist/ + API on port 3000
 ```
+
+## Agent Tooling Notes
+
+> **`grep_search` bug**: Single-file `SearchPath` always returns "No results found". Use **directory** as `SearchPath` + `Includes` glob to filter. Example: `SearchPath: src/components`, `Includes: ["SongRandomizer.vue"]`.

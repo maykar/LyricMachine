@@ -34,6 +34,7 @@
       <!-- Carousel viewport -->
       <div class="carousel-viewport" :class="{ 'overflow-ok': landed }" ref="viewportRef">
         <div
+          ref="trackRef"
           class="carousel-track"
           :style="{ transform: `translateX(${trackOffset}px)` }"
         >
@@ -51,6 +52,7 @@
             <!-- Winner celebration layers -->
             <template v-if="landed && i === winnerRenderIndex">
               <div class="shimmer-overlay"></div>
+              <div class="noise-overlay"></div>
             </template>
             <div class="carousel-card-inner">
               <img v-if="item.albumArt" :src="item.albumArt" class="carousel-card-art" alt="" />
@@ -136,6 +138,7 @@ const props = defineProps({
 const emit = defineEmits(['close', 'select'])
 
 const viewportRef = ref(null)
+const trackRef = ref(null)
 const confettiCanvas = ref(null)
 let fireConfetti = null
 const cardWidth = 200
@@ -350,6 +353,8 @@ function onSpinClick() {
   const prevWinner = document.querySelector('.carousel-card.is-winner')
   if (prevWinner) {
     prevWinner.style.transform = ''
+    prevWinner.style.borderColor = ''
+    prevWinner.style.filter = ''
   }
   winnerRenderIndex.value = -1
   spotifyId.value = null
@@ -374,8 +379,17 @@ function onSpinClick() {
     lastCenterCardIdx = startIdx
 
     /* Preload Spotify: we already know which card will win */
+    const RICKROLL_CHANCE = 0.02 // 2% easter egg, max once per month
+    const rrKey = 'lyricmachine_rr'
+    const rrMonth = new Date().getFullYear() + '-' + (new Date().getMonth() + 1)
+    const lastRR = localStorage.getItem(rrKey)
+    const isRickroll = lastRR !== rrMonth && Math.random() < RICKROLL_CHANCE
     const winnerCard = renderCards.value[targetIdx]
-    if (winnerCard) {
+    if (isRickroll && _sp.ctrl) {
+      spotifyId.value = '4cOdK2wGLETKBW3PvgPWqT'
+      preloadSpotifyTrack('4cOdK2wGLETKBW3PvgPWqT')
+      localStorage.setItem(rrKey, rrMonth)
+    } else if (winnerCard) {
       const { artist, track, title } = winnerCard
       // Check if we already have a cached Spotify ID in favorites
       const cachedFav = props.favorites.find(f => f.title === title)
@@ -423,10 +437,11 @@ function onSpinClick() {
       // Phase 1: cubic ease-out toward overshoot point
       const overshootTarget = targetOffset - overshootPx
       const eased = 1 - Math.pow(1 - progress, 3)
-      trackOffset.value = startOffset + (overshootTarget - startOffset) * eased
+      const currentOffset = startOffset + (overshootTarget - startOffset) * eased
+      if (trackRef.value) trackRef.value.style.transform = `translateX(${currentOffset}px)`
 
       /* Tick sound when a new card crosses center */
-      const currentCenterIdx = Math.round((centerOffset() - trackOffset.value) / cardStep)
+      const currentCenterIdx = Math.round((centerOffset() - currentOffset) / cardStep)
       if (currentCenterIdx !== lastCenterCardIdx) {
         lastCenterCardIdx = currentCenterIdx
         playTick()
@@ -442,13 +457,13 @@ function onSpinClick() {
         animFrame = requestAnimationFrame(animate)
       } else {
         // Phase 2: ease back from overshoot to center
-        trackOffset.value = overshootTarget
         winnerRenderIndex.value = targetIdx
         const bounceStart = performance.now()
         function bounceBack(now) {
           const bt = Math.min((now - bounceStart) / bounceBackMs, 1)
           const be = 1 - Math.pow(1 - bt, 2) // ease-out quad
-          trackOffset.value = overshootTarget + (targetOffset - overshootTarget) * be
+          const bounceOffset = overshootTarget + (targetOffset - overshootTarget) * be
+          if (trackRef.value) trackRef.value.style.transform = `translateX(${bounceOffset}px)`
           if (bt < 1) {
             animFrame = requestAnimationFrame(bounceBack)
           } else {
@@ -486,7 +501,7 @@ function land() {
   land._resizeHandler = recenterWinner
 
   // Drive holographic shimmer + 3D tilt (no delay needed)
-  const FLOAT_DURATION = 6000
+  const FLOAT_DURATION = 8000
   const startTime = performance.now()
   let holoFrame = null
 
@@ -496,22 +511,12 @@ function land() {
     // Get winner element for transform updates
     const winnerEl = document.querySelector('.carousel-card.is-winner')
 
-    const t = (elapsed % FLOAT_DURATION) / FLOAT_DURATION
-    const smooth = p => p * p * (3 - 2 * p) // smoothstep
-    let ry, rx
-    if (t < 0.15) {
-      const p = smooth(t / 0.15); ry = 33 * p; rx = -10 * p
-    } else if (t < 0.30) {
-      const p = smooth((t - 0.15) / 0.15); ry = 33 + (7 - 33) * p; rx = -10 + (16 + 10) * p
-    } else if (t < 0.50) {
-      const p = smooth((t - 0.30) / 0.20); ry = 7 + (-33 - 7) * p; rx = 16 + (-13 - 16) * p
-    } else if (t < 0.70) {
-      const p = smooth((t - 0.50) / 0.20); ry = -33 + (-10 + 33) * p; rx = -13 + (10 + 13) * p
-    } else if (t < 0.85) {
-      const p = smooth((t - 0.70) / 0.15); ry = -10 + (20 + 10) * p; rx = 10 + (-7 - 10) * p
-    } else {
-      const p = smooth((t - 0.85) / 0.15); ry = 20 * (1 - p); rx = -7 * (1 - p)
-    }
+    // Smooth Lissajous motion — sine waves with ramp-in for seamless spin transition
+    const t = elapsed / 1000
+    const rawRamp = Math.min(t / 2, 1)
+    const ramp = rawRamp * rawRamp * (3 - 2 * rawRamp) // smoothstep ease-in
+    const ry = (Math.sin(t * 0.8) * 15 + Math.sin(t * 0.29) * 6) * ramp
+    const rx = (Math.sin(t * 0.57 + 1.2) * 6 + Math.sin(t * 0.21) * 3) * ramp
 
     // Apply card tilt (no scale — card is physically 400px)
     // During first 500ms, add a 360° flat spin (rotateZ) for the zoom entrance
@@ -524,6 +529,13 @@ function land() {
         rz = 360 * (1 - Math.pow(1 - sp, 3)) // ease-out cubic
       }
       winnerEl.style.transform = `perspective(600px) rotateY(${ry}deg) rotateX(${rx}deg) rotateZ(${rz}deg)`
+
+      // Edge lighting — border brightens on the "lit" side
+      const lb = (0.55 + ry / 70).toFixed(2)
+      const rb = (0.55 - ry / 70).toFixed(2)
+      const tb = (0.55 - rx / 30).toFixed(2)
+      const bb = (0.55 + rx / 30).toFixed(2)
+      winnerEl.style.borderColor = `rgba(245,197,66,${tb}) rgba(245,197,66,${rb}) rgba(245,197,66,${bb}) rgba(245,197,66,${lb})`
     }
 
     // Apply shimmer position (same values = perfect sync)
@@ -539,8 +551,8 @@ function land() {
   holoFrame = requestAnimationFrame(updateHolo)
   land._holoFrame = holoFrame
 
-  /* Play Spotify if not already triggered by early-play */
-  if (!spotifyPlayTriggered && _sp.ctrl && _sp.ready) {
+  /* Play Spotify only if the winner's track was actually preloaded */
+  if (!spotifyPlayTriggered && _sp.ctrl && _sp.ready && spotifyId.value) {
     _sp.ctrl.play()
   }
 
@@ -916,6 +928,9 @@ onUnmounted(() => {
   display: flex;
   gap: 12px;
   transform: translateZ(0);
+  will-change: transform;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
   align-items: center;
 }
 
@@ -938,7 +953,6 @@ onUnmounted(() => {
   background: linear-gradient(135deg, #1e1a0e 0%, #2a1f08 50%, #1e1a0e 100%);
   cursor: pointer;
   z-index: 2;
-  animation: winnerGlow 2s ease-in-out infinite;
   position: relative;
   overflow: visible;
   box-shadow: 0 0 24px rgba(245, 197, 66, 0.25), 0 0 60px rgba(245, 197, 66, 0.05), 0 20px 60px rgba(0, 0, 0, 0.7);
@@ -963,9 +977,17 @@ onUnmounted(() => {
   font-size: 1.8rem;
 }
 
-@keyframes winnerGlow {
-  0%, 100% { box-shadow: 0 0 24px rgba(245, 197, 66, 0.25), 0 0 60px rgba(245, 197, 66, 0.05), 0 20px 60px rgba(0, 0, 0, 0.7); }
-  50% { box-shadow: 0 0 40px rgba(245, 197, 66, 0.45), 0 0 80px rgba(245, 197, 66, 0.15), 0 20px 60px rgba(0, 0, 0, 0.7); }
+/* Noise texture overlay */
+.noise-overlay {
+  position: absolute;
+  inset: 0;
+  border-radius: 10px;
+  pointer-events: none;
+  z-index: 5;
+  opacity: 0.04;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: cover;
+  mix-blend-mode: overlay;
 }
 
 

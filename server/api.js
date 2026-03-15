@@ -1,6 +1,7 @@
 import { readFileSync } from 'fs'
 import { join } from 'path'
 import { handleSpotifyIdRequest, handlePlaylistTracks } from './spotify.js'
+import { handlePopularArt } from './popularArt.js'
 import { setupUGImportRoutes, setupBookmarkletRoutes } from './ugImport.js'
 
 // --- Load .env ---
@@ -31,6 +32,11 @@ export function setupAPI(server) {
   // Spotify playlist tracks
   server.use('/api/playlist-tracks', (req, res) => {
     handlePlaylistTracks(req, res)
+  })
+
+  // Popular rock album art for mosaic placeholder
+  server.use('/api/popular-art', (req, res) => {
+    handlePopularArt(req, res)
   })
 
   // Open UG in browser

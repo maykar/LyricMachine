@@ -9,8 +9,11 @@ export function useKeyboard({
   showChords,
   showPlayer,
   startUGImportPoll,
+  goHome,
+  openRandomizer,
 }) {
   function onKeydown(e) {
+    if (e.ctrlKey || e.altKey || e.metaKey) return
     const tag = e.target.tagName
 
     if (tag === 'INPUT' || tag === 'TEXTAREA') {
@@ -18,7 +21,7 @@ export function useKeyboard({
         if (editingLyrics.value) {
           cancelEditMode()
         } else {
-          showLibrary.value = false
+          e.target.blur()
         }
       }
       return
@@ -27,11 +30,20 @@ export function useKeyboard({
     switch (e.key) {
       case ' ':
         e.preventDefault()
-        showLibrary.value = !showLibrary.value
+        // Space: open Library from Dashboard or Lyrics (Randomizer handles its own Space)
+        if (!showLibrary.value) {
+          showLibrary.value = true
+        }
         break
 
       case 'Escape':
-        showLibrary.value = false
+        if (showLibrary.value) {
+          // Library open → go home (Dashboard)
+          goHome()
+        } else if (currentLyrics.value) {
+          // Lyrics view → open Library (go back to browse)
+          showLibrary.value = true
+        }
         break
 
       case 't':
@@ -54,6 +66,11 @@ export function useKeyboard({
         if (!showLibrary.value && currentLyrics.value) {
           showPlayer.value = !showPlayer.value
         }
+        break
+
+      case 'r':
+      case 'R':
+        openRandomizer()
         break
     }
   }

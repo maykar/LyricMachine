@@ -64,6 +64,8 @@
         v-else
         :favorites="dashFavorites"
         @select="onSongSelect"
+        @open-kanban="openWithKanban = true; showLibrary = true"
+        @open-library="showLibrary = true"
       />
     </div>
 
@@ -97,11 +99,22 @@
     <!-- Library Overlay -->
     <LibraryOverlay
       v-if="showLibrary"
+      :initial-kanban="openWithKanban"
       @select="onSongSelect"
-      @close="showLibrary = false; refreshDashboard()"
+      @close="showLibrary = false; openWithKanban = false; refreshDashboard()"
+      @go-home="goHome"
       @updated="refreshCurrentSong"
       @defaults-changed="onDefaultsChanged"
       @toggle-settings="showSettings = !showSettings"
+      @open-randomizer="openRandomizer"
+    />
+
+    <!-- Song Randomizer (standalone) -->
+    <SongRandomizer
+      v-if="showRandomizer"
+      :favorites="getFavorites()"
+      @select="onRandomizerSelect"
+      @close="showRandomizer = false"
     />
   </div>
 </template>
@@ -114,6 +127,7 @@ import TopBar from './components/TopBar.vue'
 import SettingsDropdown from './components/SettingsDropdown.vue'
 import ChordDrawer from './components/ChordDrawer.vue'
 import SpotifyPlayer from './components/SpotifyPlayer.vue'
+import SongRandomizer from './components/SongRandomizer.vue'
 import Dashboard from './components/Dashboard.vue'
 
 import { useFavorites } from './composables/useFavorites.js'
@@ -155,6 +169,8 @@ const { syncPlaylist, backfillAlbumArt } = usePlaylistSync(getFavorites, saveFav
 
 // --- UI state ---
 const showLibrary = ref(false)
+const openWithKanban = ref(false)
+const showRandomizer = ref(false)
 const lyricsRef = ref(null)
 const editingLyrics = ref(false)
 const editLyricsText = ref('')
@@ -163,6 +179,26 @@ const dashFavorites = ref([])
 
 function refreshDashboard() {
   dashFavorites.value = getFavorites()
+}
+
+function goHome() {
+  showLibrary.value = false
+  openWithKanban.value = false
+  showRandomizer.value = false
+  currentTitle.value = ''
+  currentLyrics.value = ''
+  showChords.value = false
+  showPlayer.value = false
+  refreshDashboard()
+}
+
+function openRandomizer() {
+  showRandomizer.value = true
+}
+
+function onRandomizerSelect(fav) {
+  showRandomizer.value = false
+  onSongSelect(fav)
 }
 
 // --- Keyboard shortcuts ---
@@ -175,6 +211,8 @@ useKeyboard({
   showChords,
   showPlayer,
   startUGImportPoll,
+  goHome,
+  openRandomizer,
 })
 
 // --- Song selection ---
