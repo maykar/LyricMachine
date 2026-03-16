@@ -12,7 +12,7 @@
           @keydown.escape="$emit('close')"
         />
         <span v-if="!query.trim()" class="library-actions">
-          <button class="action-btn" @click="showNewSong = !showNewSong" title="New Song"><MdiIcon :path="mdiPlus" :size="32" /></button>
+          <button class="action-btn" @click="toggleDropdown('newSong')" title="New Song"><MdiIcon :path="mdiPlus" :size="32" /></button>
           <button v-if="favorites.length" class="action-btn" @click="exportFavorites" title="Export"><MdiIcon :path="mdiDownload" :size="32" /></button>
           <button class="action-btn" @click="triggerImport" title="Import"><MdiIcon :path="mdiUpload" :size="32" /></button>
           <div v-if="favorites.length" class="filter-wrapper">
@@ -20,7 +20,7 @@
               class="action-btn"
               :class="{ active: activeFilterCount > 0 }"
               title="Filters"
-              @click.stop="showFilterDropdown = !showFilterDropdown"
+              @click.stop="toggleDropdown('filter')"
             >
               <MdiIcon :path="mdiFilterVariant" :size="32" />
               <span v-if="activeFilterCount" class="filter-badge">{{ activeFilterCount }}</span>
@@ -54,7 +54,7 @@
               class="action-btn"
               :class="{ active: sortBy !== 'none' }"
               title="Sort"
-              @click.stop="showSortDropdown = !showSortDropdown"
+              @click.stop="toggleDropdown('sort')"
             >
               <MdiIcon :path="mdiSort" :size="32" />
             </button>
@@ -70,7 +70,7 @@
             </div>
           </div>
           <button v-if="favorites.some(f => f.played > 0)" class="action-btn" @click="resetAllPlayed" title="Clear all played"><MdiIcon :path="mdiRefresh" :size="32" /></button>
-          <button v-if="favorites.length" class="action-btn" :class="{ active: showKanban }" @click="showKanban = !showKanban" title="Kanban View"><MdiIcon :path="mdiViewColumn" :size="32" /></button>
+          <button v-if="favorites.length" class="action-btn" @click="$emit('open-kanban')" title="Kanban View"><MdiIcon :path="mdiViewColumn" :size="32" /></button>
           <button v-if="favorites.length >= 2" class="action-btn" @click="$emit('open-randomizer')" title="Randomize"><MdiIcon :path="mdiDice5" :size="32" /></button>
           <button class="action-btn" @click="$emit('toggle-settings')" title="Settings"><MdiIcon :path="mdiCog" :size="32" /></button>
           <button class="action-btn" @click="$emit('go-home')" title="Dashboard"><MdiIcon :path="mdiHome" :size="32" /></button>
@@ -187,13 +187,7 @@
 
 
 
-      <!-- Kanban View -->
-      <KanbanView
-        v-if="showKanban"
-        :favorites="favorites"
-        @update="onKanbanUpdate"
-        @close="showKanban = false"
-      />
+
 
       <!-- Context menu -->
       <div
@@ -232,7 +226,6 @@
 
 <script setup>
 import { ref, reactive, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
-import KanbanView from './KanbanView.vue'
 import MdiIcon from './MdiIcon.vue'
 import {
   mdiPlus, mdiDownload, mdiUpload, mdiFilterVariant, mdiRefresh,
@@ -244,10 +237,10 @@ const STORAGE_KEY = 'lyricmachine_favorites'
 const DEFAULTS_KEY = 'lyricmachine_defaults'
 
 const props = defineProps({
-  initialKanban: { type: Boolean, default: false },
+  favorites: { type: Array, required: true },
 })
 
-const emit = defineEmits(['close', 'go-home', 'select', 'updated', 'defaults-changed', 'toggle-settings', 'open-randomizer'])
+const emit = defineEmits(['close', 'go-home', 'select', 'updated', 'defaults-changed', 'toggle-settings', 'open-randomizer', 'open-kanban'])
 
 const query = ref('')
 const inputRef = ref(null)
@@ -255,7 +248,6 @@ const favContainerRef = ref(null)
 const backdropMouseDown = ref(false)
 const showSettings = ref(false)
 const showNewSong = ref(false)
-const showKanban = ref(props.initialKanban)
 const hidePlayed = ref(JSON.parse(localStorage.getItem('lm_filter_hidePlayed') || 'false'))
 const filterNoChords = ref(JSON.parse(localStorage.getItem('lm_filter_noChords') || 'false'))
 const filterFresh = ref(false)
@@ -265,6 +257,15 @@ const showFilterDropdown = ref(false)
 const sortBy = ref('none')
 const sortDir = ref('asc')
 const showSortDropdown = ref(false)
+
+function toggleDropdown(which) {
+  if (which !== 'filter') showFilterDropdown.value = false
+  if (which !== 'sort') showSortDropdown.value = false
+  if (which !== 'newSong') showNewSong.value = false
+  if (which === 'filter') showFilterDropdown.value = !showFilterDropdown.value
+  else if (which === 'sort') showSortDropdown.value = !showSortDropdown.value
+  else if (which === 'newSong') showNewSong.value = !showNewSong.value
+}
 
 function toggleSort(field) {
   if (sortBy.value === field) {
@@ -364,10 +365,7 @@ function clearPlayCountFromCtx() {
   closeContextMenu()
 }
 
-function onKanbanUpdate(updatedFavs) {
-  favorites.value = updatedFavs
-  saveFavorites()
-}
+
 
 const activeFilterCount = computed(() => {
   let count = 0
@@ -716,9 +714,7 @@ function onLibraryKeydown(e) {
 onMounted(async () => {
   loadFavorites()
   loadDefaults()
-  if (!props.initialKanban) {
-    inputRef.value?.focus()
-  }
+  inputRef.value?.focus()
 
   // Measure container to calculate how many rows fit
   await nextTick()
@@ -765,13 +761,13 @@ onBeforeUnmount(() => {
   padding: 0.85rem 1.1rem;
   font-size: 1.3rem;
   font-family: inherit;
-  background: #111;
+  background: var(--bg-elevated);
   color: #e8e8e8;
-  border: 1px solid #222;
-  border-radius: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
   outline: none;
-  caret-color: #f5c542;
-  transition: border-color 0.2s;
+  caret-color: var(--accent);
+  transition: border-color var(--speed-normal);
 }
 
 .library-input::placeholder {
@@ -779,7 +775,7 @@ onBeforeUnmount(() => {
 }
 
 .library-input:focus {
-  border-color: #333;
+  border-color: var(--border-light);
 }
 
 .library-section-label {
@@ -787,11 +783,11 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: space-between;
   padding: 0.8rem 1.5rem 0.5rem;
-  font-size: 0.75rem;
+  font-size: var(--font-xs);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: rgba(255, 255, 255, 0.3);
+  color: var(--text-dim);
 }
 
 .library-actions {
@@ -802,19 +798,19 @@ onBeforeUnmount(() => {
 
 .library-actions .action-btn {
   background: #161616;
-  border: 1px solid #222;
+  border: 1px solid var(--border);
   color: #666;
   aspect-ratio: 1;
   height: 100%;
   padding: 0;
   font-size: 1.2rem;
   font-family: inherit;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: color 0.2s, border-color 0.2s;
+  transition: color var(--speed-normal), border-color var(--speed-normal);
 }
 
 .library-actions .action-btn:hover {
@@ -847,9 +843,9 @@ onBeforeUnmount(() => {
   position: absolute;
   top: calc(100% + 6px);
   right: 0;
-  background: #1a1a1a;
-  border: 1px solid #333;
-  border-radius: 8px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
   padding: 0.5rem 0;
   min-width: 160px;
   z-index: 100;
@@ -862,9 +858,9 @@ onBeforeUnmount(() => {
   gap: 0.6rem;
   padding: 0.5rem 1rem;
   cursor: pointer;
-  font-size: 0.85rem;
+  font-size: var(--font-sm);
   color: #ccc;
-  transition: background 0.15s;
+  transition: background var(--speed-fast);
 }
 
 .filter-btn {
@@ -884,11 +880,11 @@ onBeforeUnmount(() => {
 }
 
 .filter-item:hover {
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--bg-hover-subtle);
 }
 
 .filter-item input[type="checkbox"] {
-  accent-color: #64ffda;
+  accent-color: var(--color-teal);
   width: 16px;
   height: 16px;
   cursor: pointer;
@@ -937,10 +933,10 @@ onBeforeUnmount(() => {
   justify-content: space-between;
   padding: 0.75rem 1rem;
   cursor: pointer;
-  border-radius: 8px;
-  background: #111;
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
   border: 1px solid #1e1e1e;
-  transition: background 0.15s, border-color 0.15s;
+  transition: background var(--speed-fast), border-color var(--speed-fast);
   position: relative;
 }
 
@@ -950,7 +946,7 @@ onBeforeUnmount(() => {
   right: 1rem;
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--space-md);
   z-index: 1;
 }
 
@@ -983,34 +979,34 @@ onBeforeUnmount(() => {
   z-index: 9999;
   background: rgba(30, 30, 30, 0.95);
   backdrop-filter: blur(10px);
-  border: 1px solid #333;
-  border-radius: 8px;
-  padding: 0.3rem;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  padding: var(--space-xs);
   min-width: 150px;
 }
 
 .ctx-option {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--space-md);
   width: 100%;
   background: none;
   border: none;
   color: rgba(255,255,255,0.7);
   padding: 0.4rem 0.6rem;
-  border-radius: 5px;
+  border-radius: var(--radius-xs);
   cursor: pointer;
-  font-size: 0.8rem;
+  font-size: var(--font-sm);
 }
 
 .ctx-option:hover {
-  background: rgba(255,255,255,0.08);
+  background: var(--bg-hover);
   color: #fff;
 }
 
 .ctx-option.active {
   font-weight: 600;
-  color: #f5c542;
+  color: var(--accent);
 }
 
 .ctx-dot {
@@ -1022,8 +1018,8 @@ onBeforeUnmount(() => {
 
 .ctx-divider {
   height: 1px;
-  background: #333;
-  margin: 0.3rem 0;
+  background: var(--border-light);
+  margin: var(--space-xs) 0;
 }
 
 .ctx-delete {
@@ -1037,8 +1033,8 @@ onBeforeUnmount(() => {
 
 .filter-divider {
   height: 1px;
-  background: #333;
-  margin: 0.3rem 0;
+  background: var(--border-light);
+  margin: var(--space-xs) 0;
 }
 
 .filter-label-dot::before {
@@ -1053,8 +1049,8 @@ onBeforeUnmount(() => {
 }
 
 .library-item:hover {
-  background: #1a1a1a;
-  border-color: #2a2a2a;
+  background: var(--bg-surface);
+  border-color: var(--border);
 }
 
 .library-item-info {
@@ -1085,7 +1081,7 @@ onBeforeUnmount(() => {
   background: none;
   border: 1px solid transparent;
   color: #444;
-  font-size: 0.7rem;
+  font-size: var(--font-xs);
   width: 20px;
   height: 20px;
   cursor: pointer;
@@ -1093,7 +1089,7 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: center;
   border-radius: 3px;
-  transition: color 0.2s, border-color 0.2s;
+  transition: color var(--speed-normal), border-color var(--speed-normal);
   opacity: 0;
 }
 
@@ -1121,23 +1117,23 @@ onBeforeUnmount(() => {
   line-height: 1;
   color: #555;
   padding: 0.1rem 0.3rem;
-  transition: color 0.2s, transform 0.15s;
+  transition: color var(--speed-normal), transform var(--speed-fast);
   flex-shrink: 0;
 }
 
 .star-btn-inline:hover {
-  color: #f5c542;
+  color: var(--accent);
   transform: scale(1.15);
 }
 
 .star-btn-inline.saved {
-  color: #f5c542;
+  color: var(--accent);
 }
 
 .library-status {
   padding: 0.5rem 1.5rem;
-  font-size: 0.8rem;
-  color: rgba(255, 255, 255, 0.3);
+  font-size: var(--font-sm);
+  color: var(--text-dim);
 }
 
 .library-status-center {
@@ -1157,14 +1153,14 @@ onBeforeUnmount(() => {
 
 .page-btn {
   background: #161616;
-  border: 1px solid #222;
+  border: 1px solid var(--border);
   color: #999;
   padding: 0.35rem 0.8rem;
   font-size: 1rem;
   font-family: inherit;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
-  transition: color 0.2s, border-color 0.2s;
+  transition: color var(--speed-normal), border-color var(--speed-normal);
 }
 
 .page-btn:hover:not(:disabled) {
@@ -1178,17 +1174,17 @@ onBeforeUnmount(() => {
 }
 
 .page-info {
-  font-size: 0.85rem;
+  font-size: var(--font-sm);
   color: rgba(255, 255, 255, 0.35);
   letter-spacing: 0.05em;
 }
 
 .settings-panel {
   padding: 0.5rem 1rem;
-  margin: 0 1rem 0.5rem;
-  background: #111;
+  margin: 1rem 1.25rem 0.5rem;
+  background: var(--bg-elevated);
   border: 1px solid #1e1e1e;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
 }
 
 .new-song-form {
@@ -1204,25 +1200,25 @@ onBeforeUnmount(() => {
 
 .new-song-input {
   flex: 1;
-  background: #0a0a0a;
-  border: 1px solid #2a2a2a;
-  border-radius: 4px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
   padding: 0.4rem 0.6rem;
-  font-size: 0.85rem;
+  font-size: var(--font-sm);
   color: #eee;
   outline: none;
 }
 
 .new-song-input:focus {
-  border-color: #f5c542;
+  border-color: var(--accent);
 }
 
 .new-song-lyrics {
-  background: #0a0a0a;
-  border: 1px solid #2a2a2a;
-  border-radius: 4px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
   padding: 0.5rem 0.6rem;
-  font-size: 0.8rem;
+  font-size: var(--font-sm);
   font-family: 'Inter', monospace;
   color: #ddd;
   resize: vertical;
@@ -1231,23 +1227,23 @@ onBeforeUnmount(() => {
 }
 
 .new-song-lyrics:focus {
-  border-color: #f5c542;
+  border-color: var(--accent);
 }
 
 .new-song-submit {
   align-self: flex-start;
   padding: 0.35rem 1rem;
-  font-size: 0.8rem;
-  background: rgba(245, 197, 66, 0.15);
-  border: 1px solid rgba(245, 197, 66, 0.3);
-  border-radius: 4px;
-  color: #f5c542;
+  font-size: var(--font-sm);
+  background: var(--accent-15);
+  border: 1px solid var(--accent-30);
+  border-radius: var(--radius-xs);
+  color: var(--accent);
   cursor: pointer;
-  transition: all 0.15s;
+  transition: all var(--speed-fast);
 }
 
 .new-song-submit:hover:not(:disabled) {
-  background: rgba(245, 197, 66, 0.25);
+  background: var(--accent-25);
 }
 
 .new-song-submit:disabled {
@@ -1259,16 +1255,16 @@ onBeforeUnmount(() => {
 .played-check {
   width: 20px;
   height: 20px;
-  border: 1px solid #333;
+  border: 1px solid var(--border-light);
   border-radius: 3px;
   background: transparent;
   color: transparent;
-  font-size: 0.7rem;
+  font-size: var(--font-xs);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.15s;
+  transition: all var(--speed-fast);
   opacity: 0;
 }
 
@@ -1280,7 +1276,7 @@ onBeforeUnmount(() => {
 .played-check.checked {
   background: rgba(46, 204, 113, 0.15);
   border-color: rgba(46, 204, 113, 0.4);
-  color: #2ecc71;
+  color: var(--color-success);
 }
 
 .library-item.is-played {
@@ -1293,6 +1289,6 @@ onBeforeUnmount(() => {
 
 .action-btn.active {
   color: #f5c542;
-  border-color: rgba(245, 197, 66, 0.3);
+  border-color: var(--accent-30);
 }
 </style>

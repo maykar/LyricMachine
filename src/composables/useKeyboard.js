@@ -3,14 +3,15 @@ import { onMounted, onUnmounted } from 'vue'
 export function useKeyboard({
   editingLyrics,
   cancelEditMode,
-  showLibrary,
+  currentView,
+  pushView,
+  popView,
+  goHome,
   currentTitle,
   currentLyrics,
   showChords,
   showPlayer,
   startUGImportPoll,
-  goHome,
-  openRandomizer,
 }) {
   function onKeydown(e) {
     if (e.ctrlKey || e.altKey || e.metaKey) return
@@ -31,24 +32,23 @@ export function useKeyboard({
       case ' ':
         e.preventDefault()
         // Space: open Library from Dashboard or Lyrics (Randomizer handles its own Space)
-        if (!showLibrary.value) {
-          showLibrary.value = true
+        if (!currentView.value) {
+          pushView('library')
         }
         break
 
       case 'Escape':
-        if (showLibrary.value) {
-          // Library open → go home (Dashboard)
+        if (currentView.value === 'kanban' || currentView.value === 'randomizer') {
+          popView()
+        } else if (currentView.value === 'library') {
           goHome()
-        } else if (currentLyrics.value) {
-          // Lyrics view → open Library (go back to browse)
-          showLibrary.value = true
         }
+        // No action on Dashboard/Lyrics — use Space to open Library
         break
 
       case 't':
       case 'T':
-        if (!showLibrary.value) {
+        if (!currentView.value) {
           fetch(`/api/open-ug?q=${encodeURIComponent(currentTitle.value)}`)
           startUGImportPoll()
         }
@@ -56,21 +56,21 @@ export function useKeyboard({
 
       case 'c':
       case 'C':
-        if (!showLibrary.value && currentLyrics.value) {
+        if (!currentView.value && currentLyrics.value) {
           showChords.value = !showChords.value
         }
         break
 
       case 'p':
       case 'P':
-        if (!showLibrary.value && currentLyrics.value) {
+        if (!currentView.value && currentLyrics.value) {
           showPlayer.value = !showPlayer.value
         }
         break
 
       case 'r':
       case 'R':
-        openRandomizer()
+        pushView('randomizer')
         break
     }
   }

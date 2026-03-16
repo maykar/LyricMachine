@@ -16,7 +16,7 @@
       @save-edit="exitEditMode"
       @cancel-edit="cancelEditMode"
       @enter-edit="enterEditMode"
-      @open-library="showLibrary = true"
+      @open-library="pushView('library')"
       @toggle-settings="showSettings = !showSettings"
       @toggle-star="toggleStar"
       @set-label="setLabel"
@@ -62,10 +62,10 @@
 
       <Dashboard
         v-else
-        :favorites="dashFavorites"
+        :favorites="favorites"
         @select="onSongSelect"
-        @open-kanban="openWithKanban = true; showLibrary = true"
-        @open-library="showLibrary = true"
+        @open-kanban="pushView('kanban')"
+        @open-library="pushView('library')"
       />
     </div>
 
@@ -98,23 +98,31 @@
 
     <!-- Library Overlay -->
     <LibraryOverlay
-      v-if="showLibrary"
-      :initial-kanban="openWithKanban"
+      v-if="isOpen('library')"
       @select="onSongSelect"
-      @close="showLibrary = false; openWithKanban = false; refreshDashboard()"
+      @close="popView"
       @go-home="goHome"
       @updated="refreshCurrentSong"
       @defaults-changed="onDefaultsChanged"
       @toggle-settings="showSettings = !showSettings"
-      @open-randomizer="openRandomizer"
+      @open-randomizer="pushView('randomizer')"
+      @open-kanban="pushView('kanban')"
     />
 
     <!-- Song Randomizer (standalone) -->
     <SongRandomizer
-      v-if="showRandomizer"
-      :favorites="getFavorites()"
+      v-if="isOpen('randomizer')"
+      :favorites="favorites"
       @select="onRandomizerSelect"
-      @close="showRandomizer = false"
+      @close="popView"
+    />
+
+    <!-- Kanban View (standalone) -->
+    <KanbanView
+      v-if="isOpen('kanban')"
+      :favorites="favorites"
+      @update="onKanbanUpdate"
+      @close="popView"
     />
   </div>
 </template>
@@ -128,6 +136,7 @@ import SettingsDropdown from './components/SettingsDropdown.vue'
 import ChordDrawer from './components/ChordDrawer.vue'
 import SpotifyPlayer from './components/SpotifyPlayer.vue'
 import SongRandomizer from './components/SongRandomizer.vue'
+import KanbanView from './components/KanbanView.vue'
 import Dashboard from './components/Dashboard.vue'
 
 import { useFavorites } from './composables/useFavorites.js'
@@ -136,12 +145,13 @@ import { useChords } from './composables/useChords.js'
 import { useUGImport } from './composables/useUGImport.js'
 import { usePlaylistSync } from './composables/usePlaylistSync.js'
 import { useKeyboard } from './composables/useKeyboard.js'
+import { useViewStack } from './composables/useViewStack.js'
 
 // --- Composables ---
 const {
   currentTitle, currentLyrics, fontAdjust,
   songMerge, songSeparators, songAltColors, isSaved, currentLabel, currentPlayed, currentPlayCount,
-  getFavorites, saveFavoritesArray,
+  favorites, getFavorites, saveFavoritesArray, saveFavorites,
   refreshSavedState, refreshCurrentSong, toggleStar, setLabel, togglePlayed,
   onAdjustChanged, onMergeChanged, onSeparatorsChanged, onAltColorsChanged,
 } = useFavorites()
@@ -168,36 +178,27 @@ const { startUGImportPoll, stopUGImportPoll } = useUGImport(
 const { syncPlaylist, backfillAlbumArt } = usePlaylistSync(getFavorites, saveFavoritesArray, userDefaults)
 
 // --- UI state ---
-const showLibrary = ref(false)
-const openWithKanban = ref(false)
-const showRandomizer = ref(false)
+const { currentView, pushView, popView, clearViews, isOpen } = useViewStack()
 const lyricsRef = ref(null)
 const editingLyrics = ref(false)
 const editLyricsText = ref('')
 const editTextarea = ref(null)
-const dashFavorites = ref([])
-
-function refreshDashboard() {
-  dashFavorites.value = getFavorites()
-}
 
 function goHome() {
-  showLibrary.value = false
-  openWithKanban.value = false
-  showRandomizer.value = false
+  clearViews()
   currentTitle.value = ''
   currentLyrics.value = ''
   showChords.value = false
   showPlayer.value = false
-  refreshDashboard()
 }
 
-function openRandomizer() {
-  showRandomizer.value = true
+function onKanbanUpdate(updatedFavs) {
+  favorites.value = updatedFavs
+  saveFavorites()
 }
 
 function onRandomizerSelect(fav) {
-  showRandomizer.value = false
+  clearViews()
   onSongSelect(fav)
 }
 
@@ -205,14 +206,15 @@ function onRandomizerSelect(fav) {
 useKeyboard({
   editingLyrics,
   cancelEditMode,
-  showLibrary,
+  currentView,
+  pushView,
+  popView,
+  goHome,
   currentTitle,
   currentLyrics,
   showChords,
   showPlayer,
   startUGImportPoll,
-  goHome,
-  openRandomizer,
 })
 
 // --- Song selection ---
@@ -223,9 +225,8 @@ function onSongSelect({ title, lyrics, fontAdjust: fa, merge, separators, altCol
   songMerge.value = merge !== undefined ? merge : userDefaults.value.merge
   songSeparators.value = separators !== undefined ? separators : userDefaults.value.separators
   songAltColors.value = altColors !== undefined ? altColors : userDefaults.value.altColors
-  showLibrary.value = false
+  clearViews()
   refreshCurrentSong()
-  refreshDashboard()
   fetchChords(title)
 }
 
@@ -264,11 +265,10 @@ function handleClearAllChords() {
 }
 
 function clearAllPlayed() {
-  const favs = getFavorites()
-  for (const fav of favs) {
+  for (const fav of favorites.value) {
     fav.played = false
   }
-  saveFavoritesArray(favs)
+  saveFavorites()
 }
 
 // --- Footer animation ---
@@ -342,7 +342,7 @@ watch(showPlayer, (val) => {
 })
 
 // --- Stop Spotify when leaving lyric page ---
-watch(showLibrary, (val) => {
+watch(() => isOpen('library'), (val) => {
   if (val) {
     showPlayer.value = false
     spotifyTrackId.value = null  // destroy iframe fully
@@ -352,10 +352,8 @@ watch(showLibrary, (val) => {
 // --- Lifecycle ---
 onMounted(() => {
   loadUserDefaults()
-  refreshDashboard()
   syncPlaylist().then(() => {
     backfillAlbumArt()
-    refreshDashboard()
   })
 })
 

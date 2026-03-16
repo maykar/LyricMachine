@@ -52,6 +52,7 @@ LyricMachine helps musicians display song lyrics, chords, and Spotify playback d
 │       ├── useChords.js     # Chord fetching from saved data, Spotify track ID lookup + cache, chord editing + reset
 │       ├── useUGImport.js   # UG bookmarklet import polling (2s interval, 2min timeout)
 │       ├── usePlaylistSync.js# Spotify playlist sync with title normalization, lyrics auto-fetch from lrclib, album art backfill
+│       ├── useViewStack.js  # Overlay view stack (library/kanban/randomizer) — replaces individual boolean refs
 │       └── useKeyboard.js   # Global keyboard shortcuts (Space/Escape/R/T/C/P, context-aware navigation)
 └── public/
     ├── SloshRat.png         # Mascot image
@@ -141,3 +142,5 @@ npm start                   # Express serves dist/ + API on port 3000
 ## Agent Tooling Notes
 
 > **`grep_search` bug**: Single-file `SearchPath` always returns "No results found". Use **directory** as `SearchPath` + `Includes` glob to filter. Example: `SearchPath: src/components`, `Includes: ["SongRandomizer.vue"]`.
+
+> **No browser agent**: Do NOT use the `browser_subagent` tool. It is unreliable and wastes time. Test locally or ask the user to verify.

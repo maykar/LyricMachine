@@ -1,7 +1,7 @@
 <template>
-  <div class="kanban-backdrop" @mousedown.self="backdropDown = true" @mouseup.self="onBackdropUp">
-    <div class="kanban-panel">
-      <button class="kanban-close" @click="$emit('close')" title="Close"><MdiIcon :path="mdiClose" :size="18" /></button>
+  <div class="overlay-backdrop kanban-backdrop" @mousedown.self="backdropDown = true" @mouseup.self="onBackdropUp">
+    <div class="modal-panel kanban-panel">
+      <button class="close-btn close-btn--danger" @click="$emit('close')" title="Close"><MdiIcon :path="mdiClose" :size="18" /></button>
       <h2 class="kanban-title" data-text="KANBAN!" @click="sayKanban">KANBAN!</h2>
 
       <div class="kanban-columns">
@@ -27,8 +27,8 @@
               @dragstart="onDragStart(item, $event)"
               @dragend="onDragEnd"
             >
-              <span class="kanban-card-artist">{{ splitTitle(item.title).artist }}</span>
-              <span class="kanban-card-track">{{ splitTitle(item.title).track }}</span>
+              <span class="kanban-card-artist text-truncate">{{ splitTitle(item.title).artist }}</span>
+              <span class="kanban-card-track text-truncate">{{ splitTitle(item.title).track }}</span>
             </div>
             <div v-if="!columnItems(col.value).length" class="kanban-empty">
               No songs
@@ -195,41 +195,15 @@ onUnmounted(() => {
 
 <style scoped>
 @import url('https://fonts.googleapis.com/css2?family=Bangers&display=swap');
-.kanban-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 1000;
-  background: rgba(0, 0, 0, 0.7);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
 
 .kanban-panel {
-  background: #0e0e0e;
-  border: 1px solid #222;
-  border-radius: 16px;
+  background: var(--bg-app);
   width: calc(100vw - 40px);
   height: calc(100vh - 40px);
   display: flex;
   flex-direction: column;
-  position: relative;
   padding: 1.5rem;
 }
-
-.kanban-close {
-  position: absolute;
-  top: 0.8rem;
-  right: 1rem;
-  background: none;
-  border: none;
-  color: rgba(255,255,255,0.3);
-  font-size: 1.2rem;
-  cursor: pointer;
-  z-index: 10;
-}
-
-.kanban-close:hover { color: #e74c3c; }
 
 .kanban-title {
   font-family: 'Bangers', cursive;
@@ -276,7 +250,7 @@ onUnmounted(() => {
 
 .kanban-columns {
   display: flex;
-  gap: 1rem;
+  gap: var(--space-lg);
   flex: 1;
   min-height: 0;
 }
@@ -286,9 +260,9 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   background: #141414;
-  border-radius: 12px;
-  border: 1px solid #222;
-  transition: border-color 0.2s, box-shadow 0.2s;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  transition: border-color var(--speed-normal), box-shadow var(--speed-normal);
 }
 
 .kanban-col.drag-target {
@@ -299,12 +273,12 @@ onUnmounted(() => {
 .kanban-col-header {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--space-md);
   padding: 1rem 1.25rem;
   font-size: 1.3rem;
   font-weight: 600;
-  color: rgba(255,255,255,0.6);
-  border-bottom: 1px solid #222;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
   user-select: none;
 }
 
@@ -316,19 +290,19 @@ onUnmounted(() => {
 
 .kanban-col-count {
   margin-left: auto;
-  color: rgba(255,255,255,0.3);
+  color: var(--text-dim);
   font-size: 1.1rem;
 }
 
 .kanban-col-body {
   flex: 1;
   overflow-y: auto;
-  padding: 0.5rem;
+  padding: var(--space-md);
   display: flex;
   flex-direction: column;
-  gap: 0.4rem;
+  gap: var(--space-sm);
   scrollbar-width: thin;
-  scrollbar-color: #333 transparent;
+  scrollbar-color: var(--border-light) transparent;
 }
 
 .kanban-col-body::-webkit-scrollbar {
@@ -340,7 +314,7 @@ onUnmounted(() => {
 }
 
 .kanban-col-body::-webkit-scrollbar-thumb {
-  background: #333;
+  background: var(--border-light);
   border-radius: 3px;
 }
 
@@ -349,20 +323,20 @@ onUnmounted(() => {
 }
 
 .kanban-card {
-  background: #1a1a1a;
-  border: 1px solid #2a2a2a;
-  border-radius: 8px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
   padding: 0.6rem 0.8rem;
   cursor: grab;
   display: flex;
   flex-direction: column;
   gap: 0.1rem;
-  transition: background 0.15s, border-color 0.15s;
+  transition: background var(--speed-fast), border-color var(--speed-fast);
 }
 
 .kanban-card:hover {
   background: #222;
-  border-color: #333;
+  border-color: var(--border-light);
 }
 
 .kanban-card:active {
@@ -372,21 +346,15 @@ onUnmounted(() => {
 .kanban-card-artist {
   font-size: 1.05rem;
   color: rgba(255,255,255,0.35);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .kanban-card-track {
   font-size: 1.3rem;
   color: rgba(255,255,255,0.8);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .kanban-empty {
-  color: rgba(255,255,255,0.2);
+  color: var(--text-faint);
   text-align: center;
   padding: 2rem 1rem;
   font-size: 1.1rem;

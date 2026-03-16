@@ -751,9 +751,9 @@ onUnmounted(() => {
 
 <style scoped>
 .randomizer-modal {
-  background: #111;
-  border: 1px solid #222;
-  border-radius: 16px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
   width: min(92vw, 920px);
   padding: 2.5rem 0 2rem;
   display: flex;
@@ -812,16 +812,16 @@ onUnmounted(() => {
   right: 1rem;
   background: none;
   border: none;
-  color: rgba(255, 255, 255, 0.2);
+  color: var(--text-faint);
   font-size: 1.1rem;
   cursor: pointer;
   padding: 0.2rem 0.5rem;
-  transition: color 0.15s;
+  transition: color var(--speed-fast);
   z-index: 2;
 }
 
 .randomizer-close:hover {
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--text-muted);
 }
 
 /* Filter dropdown */
@@ -835,25 +835,25 @@ onUnmounted(() => {
 .filter-toggle-btn {
   background: none;
   border: none;
-  color: rgba(255, 255, 255, 0.2);
+  color: var(--text-faint);
   cursor: pointer;
   padding: 0.2rem 0.5rem;
-  transition: color 0.15s;
+  transition: color var(--speed-fast);
 }
 
 .filter-toggle-btn:hover {
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--text-muted);
 }
 
 .filter-panel {
   position: absolute;
   top: 100%;
   left: 0;
-  margin-top: 0.4rem;
-  background: #1a1a1a;
-  border: 1px solid #2a2a2a;
-  border-radius: 10px;
-  padding: 0.5rem 0;
+  margin-top: var(--space-sm);
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--space-md) 0;
   z-index: 20;
   min-width: 160px;
 }
@@ -862,19 +862,19 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 0.6rem;
-  padding: 0.5rem 1rem;
+  padding: var(--space-md) var(--space-lg);
   cursor: pointer;
-  font-size: 0.85rem;
+  font-size: var(--font-sm);
   color: #ccc;
-  transition: background 0.15s;
+  transition: background var(--speed-fast);
 }
 
 .filter-check-item:hover {
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--bg-hover-subtle);
 }
 
 .filter-check-item input[type="checkbox"] {
-  accent-color: #64ffda;
+  accent-color: var(--color-teal);
   width: 16px;
   height: 16px;
   cursor: pointer;

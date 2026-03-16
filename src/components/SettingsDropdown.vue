@@ -1,7 +1,7 @@
 <template>
   <div class="overlay-backdrop settings-overlay" @mousedown.self="backdropDown = true" @mouseup.self="onBackdropUp">
-    <div class="settings-modal">
-      <button class="settings-close" @click="$emit('close')" title="Close"><MdiIcon :path="mdiClose" :size="18" /></button>
+    <div class="modal-panel settings-modal">
+      <button class="close-btn" @click="$emit('close')" title="Close"><MdiIcon :path="mdiClose" :size="18" /></button>
 
       <div class="settings-columns">
         <div class="settings-col">
@@ -18,14 +18,14 @@
             <span>Line merging</span>
             <input type="checkbox" v-model="defaults.merge" @change="$emit('save-defaults')" />
           </label>
-          <button class="apply-all-btn" @click="$emit('apply-defaults-to-all')">Apply defaults to all</button>
+          <button class="accent-btn apply-all-btn" @click="$emit('apply-defaults-to-all')">Apply defaults to all</button>
           <span v-if="applyStatus" class="apply-status">{{ applyStatus }}</span>
-          <button class="apply-all-btn danger" @click="onClearChords">
+          <button class="accent-btn accent-btn--danger apply-all-btn" @click="onClearChords">
             {{ confirmClearChords ? 'Are you sure?' : 'Clear all chords' }}
           </button>
           <span v-if="resetChordStatus" class="apply-status">{{ resetChordStatus }}</span>
-          <button class="apply-all-btn" @click="$emit('clear-played-status')">Clear played status</button>
-          <button class="apply-all-btn" @click="openBookmarklet">UG Import bookmarklet</button>
+          <button class="accent-btn apply-all-btn" @click="$emit('clear-played-status')">Clear played status</button>
+          <button class="accent-btn apply-all-btn" @click="openBookmarklet">UG Import bookmarklet</button>
         </div>
         <div class="settings-col">
           <div class="settings-section-title">Keyboard shortcuts</div>
@@ -85,34 +85,13 @@ function openBookmarklet() {
 
 <style scoped>
 .settings-modal {
-  background: #111;
-  border: 1px solid #222;
-  border-radius: 16px;
   padding: 2rem 2rem 1.5rem;
-  position: relative;
   max-width: 600px;
   width: 90vw;
 }
 
 .settings-overlay {
   z-index: 300;
-}
-
-.settings-close {
-  position: absolute;
-  top: 0.75rem;
-  right: 1rem;
-  background: none;
-  border: none;
-  color: rgba(255, 255, 255, 0.2);
-  font-size: 1.1rem;
-  cursor: pointer;
-  padding: 0.2rem 0.5rem;
-  transition: color 0.15s;
-}
-
-.settings-close:hover {
-  color: rgba(255, 255, 255, 0.6);
 }
 
 .settings-columns {
@@ -125,10 +104,10 @@ function openBookmarklet() {
 }
 
 .settings-section-title {
-  font-size: 0.7rem;
+  font-size: var(--font-xs);
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: rgba(255, 255, 255, 0.3);
+  color: var(--text-dim);
   padding: 0.25rem 0.5rem;
   margin-bottom: 0.15rem;
 }
@@ -138,12 +117,12 @@ function openBookmarklet() {
   flex-direction: row-reverse;
   justify-content: flex-end;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.3rem 0.5rem;
-  font-size: 0.85rem;
-  color: rgba(255, 255, 255, 0.6);
+  gap: var(--space-md);
+  padding: var(--space-xs) 0.5rem;
+  font-size: var(--font-sm);
+  color: var(--text-muted);
   cursor: pointer;
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
 }
 
 .setting-row:hover {
@@ -154,58 +133,33 @@ function openBookmarklet() {
 .setting-row input[type="checkbox"] {
   width: 16px;
   height: 16px;
-  accent-color: #f5c542;
+  accent-color: var(--accent);
   cursor: pointer;
 }
 
 .apply-all-btn {
   display: block;
-  margin-top: 0.5rem;
-  padding: 0.3rem 0.75rem;
-  font-size: 0.75rem;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid #2a2a2a;
-  border-radius: 4px;
-  color: rgba(255, 255, 255, 0.5);
-  cursor: pointer;
-  transition: all 0.15s;
-}
-
-.apply-all-btn:hover {
-  background: rgba(245, 197, 66, 0.1);
-  border-color: #f5c542;
-  color: #f5c542;
-}
-
-.apply-all-btn.danger:hover {
-  background: rgba(231, 76, 60, 0.1);
-  border-color: #e74c3c;
-  color: #e74c3c;
-}
-
-.apply-all-btn:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
+  margin-top: var(--space-md);
 }
 
 .apply-status {
   display: block;
   margin-top: 0.25rem;
-  font-size: 0.7rem;
-  color: #f5c542;
+  font-size: var(--font-xs);
+  color: var(--accent);
 }
 
 .reset-progress {
-  margin-top: 0.4rem;
+  margin-top: var(--space-sm);
   height: 4px;
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--bg-hover);
   border-radius: 2px;
   overflow: hidden;
 }
 
 .reset-progress-bar {
   height: 100%;
-  background: #f5c542;
+  background: var(--accent);
   border-radius: 2px;
   transition: width 0.3s ease;
 }
@@ -215,7 +169,7 @@ function openBookmarklet() {
   align-items: center;
   gap: 0.75rem;
   padding: 0.2rem 0.5rem;
-  font-size: 0.8rem;
+  font-size: var(--font-sm);
   color: rgba(255, 255, 255, 0.45);
 }
 
@@ -224,11 +178,11 @@ function openBookmarklet() {
   min-width: 2rem;
   text-align: center;
   padding: 0.1rem 0.4rem;
-  font-size: 0.75rem;
+  font-size: var(--font-xs);
   font-family: inherit;
-  background: #1a1a1a;
-  border: 1px solid #2a2a2a;
-  border-radius: 4px;
-  color: rgba(255, 255, 255, 0.5);
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  color: var(--text-muted);
 }
 </style>

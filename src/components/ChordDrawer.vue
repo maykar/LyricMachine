@@ -202,7 +202,7 @@ function resetTranspose() {
 .chord-drawer {
   flex-shrink: 0;
   background: #0d0d0d;
-  border-top: 1px solid #222;
+  border-top: 1px solid var(--border);
   padding: 1rem 1.5rem 1.25rem;
   max-height: 35vh;
   min-height: 2.5rem;
@@ -227,25 +227,25 @@ function resetTranspose() {
 }
 
 .chord-drawer-title {
-  font-size: 0.85rem;
+  font-size: var(--font-sm);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.1em;
-  color: #f5c542;
+  color: var(--accent);
 }
 
 .chord-status {
-  font-size: 0.85rem;
-  color: rgba(255, 255, 255, 0.3);
+  font-size: var(--font-sm);
+  color: var(--text-dim);
 }
 
 .chord-structure {
-  font-size: 1rem;
+  font-size: var(--font-lg);
   color: rgba(255, 255, 255, 0.4);
   letter-spacing: 0.03em;
   padding-bottom: 0.6rem;
-  margin-bottom: 0.4rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  margin-bottom: var(--space-sm);
+  border-bottom: 1px solid var(--bg-hover);
 }
 
 .chord-sections {
@@ -280,22 +280,22 @@ function resetTranspose() {
   top: 0.5rem;
   right: 0.75rem;
   display: flex;
-  gap: 0.4rem;
+  gap: var(--space-sm);
   z-index: 1;
 }
 
 .chord-icon-btn {
   background: none;
   border: none;
-  color: rgba(255, 255, 255, 0.3);
-  font-size: 0.9rem;
+  color: var(--text-dim);
+  font-size: var(--font-md);
   cursor: pointer;
-  transition: color 0.15s;
+  transition: color var(--speed-fast);
   padding: 0;
 }
 
 .chord-icon-btn:hover {
-  color: #f5c542;
+  color: var(--accent);
 }
 
 .chord-icon-btn.save {
@@ -303,116 +303,116 @@ function resetTranspose() {
 }
 
 .chord-icon-btn.save:hover {
-  color: #2ecc71;
+  color: var(--color-success);
 }
 
 .chord-icon-btn.cancel:hover {
-  color: #e74c3c;
+  color: var(--color-danger);
 }
 
 .chord-text-btn {
   background: none;
   border: none;
-  color: rgba(255, 255, 255, 0.3);
+  color: var(--text-dim);
   font-size: 0.65rem;
   cursor: pointer;
-  transition: color 0.15s;
+  transition: color var(--speed-fast);
   padding: 0;
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
 
 .chord-text-btn:hover {
-  color: #f5c542;
+  color: var(--accent);
 }
 
 .chord-structure-input {
   flex: 1;
-  background: #0a0a0a;
-  border: 1px solid #2a2a2a;
-  border-radius: 4px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
   padding: 0.2rem 0.5rem;
-  font-size: 0.85rem;
-  color: rgba(255, 255, 255, 0.6);
+  font-size: var(--font-sm);
+  color: var(--text-muted);
   outline: none;
 }
 
 .chord-structure-input:focus {
-  border-color: #f5c542;
+  border-color: var(--accent);
 }
 
 .chord-edit-sections {
   display: flex;
   flex-direction: column;
-  gap: 0.3rem;
-  padding: 0.3rem 0.5rem;
+  gap: var(--space-xs);
+  padding: var(--space-xs) 0.5rem;
 }
 
 .chord-edit-row {
   display: flex;
-  gap: 0.4rem;
+  gap: var(--space-sm);
   align-items: center;
 }
 
 .chord-edit-name {
   width: 110px;
-  background: #0a0a0a;
-  border: 1px solid #2a2a2a;
-  border-radius: 4px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
   padding: 0.2rem 0.4rem;
-  font-size: 0.8rem;
+  font-size: var(--font-sm);
   font-weight: 600;
-  color: #f5c542;
+  color: var(--accent);
   outline: none;
   cursor: pointer;
 }
 
 .chord-edit-name:focus {
-  border-color: #f5c542;
+  border-color: var(--accent);
 }
 
 .chord-edit-chords {
   flex: 1;
-  background: #0a0a0a;
-  border: 1px solid #2a2a2a;
-  border-radius: 4px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
   padding: 0.2rem 0.4rem;
-  font-size: 0.85rem;
+  font-size: var(--font-sm);
   color: #ddd;
   outline: none;
 }
 
 .chord-edit-chords:focus {
-  border-color: #f5c542;
+  border-color: var(--accent);
 }
 
 .chord-remove-btn {
   background: none;
   border: none;
-  color: rgba(255, 255, 255, 0.2);
-  font-size: 0.8rem;
+  color: var(--text-faint);
+  font-size: var(--font-sm);
   cursor: pointer;
   padding: 0.1rem 0.3rem;
 }
 
 .chord-remove-btn:hover {
-  color: #e74c3c;
+  color: var(--color-danger);
 }
 
 .chord-add-btn {
   align-self: flex-start;
   background: none;
   border: 1px dashed rgba(255, 255, 255, 0.15);
-  border-radius: 4px;
-  color: rgba(255, 255, 255, 0.3);
-  font-size: 0.75rem;
+  border-radius: var(--radius-xs);
+  color: var(--text-dim);
+  font-size: var(--font-xs);
   padding: 0.2rem 0.6rem;
   cursor: pointer;
   margin-top: 0.2rem;
 }
 
 .chord-add-btn:hover {
-  color: #f5c542;
-  border-color: rgba(245, 197, 66, 0.3);
+  color: var(--accent);
+  border-color: var(--accent-30);
 }
 </style>

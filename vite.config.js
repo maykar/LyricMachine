@@ -10,8 +10,7 @@ function chordApiPlugin() {
     name: 'chord-api',
     configureServer(server) {
       // Dynamic import to avoid pulling Node deps into the client bundle
-      return import('./server/api.js').then(({ setupAPI, loadEnv }) => {
-        loadEnv(__dirname)
+      return import('./server/api.js').then(({ setupAPI }) => {
         setupAPI(server.middlewares)
       })
     },

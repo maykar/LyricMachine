@@ -403,7 +403,7 @@ onUnmounted(() => {
   justify-content: center;
   color: rgba(255, 255, 255, 0.5);
   cursor: pointer;
-  transition: background 0.2s, color 0.2s;
+  transition: background var(--speed-normal), color var(--speed-normal);
 }
 
 .dashboard-search-btn:hover {
@@ -639,7 +639,7 @@ onUnmounted(() => {
   border-radius: 12px;
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
-  transition: border-color 0.2s, background 0.2s;
+  transition: border-color var(--speed-normal), background var(--speed-normal);
 }
 
 .stat-card:hover {
@@ -650,13 +650,13 @@ onUnmounted(() => {
 .stat-value {
   font-size: 2.4rem;
   font-weight: 700;
-  color: #f5c542;
+  color: var(--accent);
   line-height: 1;
   letter-spacing: -0.02em;
 }
 
 .stat-label {
-  font-size: 0.8rem;
+  font-size: var(--font-sm);
   color: rgba(255, 255, 255, 0.35);
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -692,7 +692,7 @@ onUnmounted(() => {
 .legend-item {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: var(--space-sm);
   font-size: 1rem;
   color: rgba(255, 255, 255, 0.719);
 }
@@ -717,7 +717,7 @@ onUnmounted(() => {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: var(--space-md);
   min-width: 0;
 }
 
@@ -747,7 +747,7 @@ onUnmounted(() => {
   cursor: pointer;
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
-  transition: background 0.15s, border-color 0.15s;
+  transition: background var(--speed-fast), border-color var(--speed-fast);
 }
 
 .song-card:hover {
@@ -784,7 +784,7 @@ onUnmounted(() => {
 }
 
 .song-artist {
-  font-size: 0.95rem;
+  font-size: var(--font-md);
   color: rgba(255, 255, 255, 0.35);
   overflow: hidden;
   text-overflow: ellipsis;

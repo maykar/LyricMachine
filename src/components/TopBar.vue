@@ -110,7 +110,7 @@ onUnmounted(() => document.removeEventListener('click', closeLabelMenu))
   display: flex;
   align-items: center;
   gap: 0.6rem;
-  background: #1a1a1a;
+  background: var(--bg-surface);
   padding: 0.55rem 1rem 0.55rem 1rem;
   border-bottom-left-radius: 10px;
 }
@@ -122,8 +122,8 @@ onUnmounted(() => document.removeEventListener('click', closeLabelMenu))
   z-index: 100;
   display: flex;
   align-items: center;
-  gap: 0.4rem;
-  background: #1a1a1a;
+  gap: var(--space-sm);
+  background: var(--bg-surface);
   padding: 0.55rem 1rem;
   border-bottom-right-radius: 10px;
 }
@@ -132,21 +132,21 @@ onUnmounted(() => document.removeEventListener('click', closeLabelMenu))
   background: none;
   border: none;
   color: rgba(255, 255, 255, 0.35);
-  font-size: 0.95rem;
+  font-size: var(--font-md);
   padding: 0.1rem 0.3rem;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: all var(--speed-fast);
   display: flex;
   align-items: center;
   gap: 0.25rem;
 }
 
 .edit-action-btn:hover {
-  color: #f5c542;
+  color: var(--accent);
 }
 
 .edit-action-btn.save {
-  color: #2ecc71;
+  color: var(--color-success);
 }
 
 .edit-action-btn.save:hover {
@@ -154,15 +154,15 @@ onUnmounted(() => document.removeEventListener('click', closeLabelMenu))
 }
 
 .edit-action-btn.cancel {
-  color: rgba(255, 255, 255, 0.3);
+  color: var(--text-dim);
 }
 
 .edit-action-btn.cancel:hover {
-  color: #e74c3c;
+  color: var(--color-danger);
 }
 
 .page-indicator {
-  font-size: 0.8rem;
+  font-size: var(--font-sm);
   color: rgba(255, 255, 255, 0.4);
   letter-spacing: 0.08em;
   user-select: none;
@@ -184,19 +184,19 @@ onUnmounted(() => document.removeEventListener('click', closeLabelMenu))
   height: 12px;
   border-radius: 50%;
   border: 1.5px solid rgba(255,255,255,0.15);
-  transition: background 0.2s;
+  transition: background var(--speed-normal);
 }
 
 .label-menu {
   position: absolute;
   top: 100%;
   right: 0;
-  margin-top: 0.3rem;
+  margin-top: var(--space-xs);
   background: rgba(30, 30, 30, 0.95);
   backdrop-filter: blur(10px);
-  border: 1px solid #333;
-  border-radius: 8px;
-  padding: 0.3rem;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  padding: var(--space-xs);
   min-width: 160px;
   z-index: 200;
 }
@@ -204,7 +204,7 @@ onUnmounted(() => document.removeEventListener('click', closeLabelMenu))
 .label-option {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--space-md);
   width: 100%;
   background: none;
   border: none;
@@ -212,17 +212,17 @@ onUnmounted(() => document.removeEventListener('click', closeLabelMenu))
   padding: 0.4rem 0.6rem;
   border-radius: 5px;
   cursor: pointer;
-  font-size: 0.8rem;
+  font-size: var(--font-sm);
   white-space: nowrap;
 }
 
 .label-option:hover {
-  background: rgba(255,255,255,0.08);
+  background: var(--bg-hover);
   color: #fff;
 }
 
 .label-option.active {
-  color: var(--lbl-color, #2ecc71);
+  color: var(--lbl-color, var(--color-success));
   font-weight: 600;
 }
 
@@ -248,17 +248,17 @@ onUnmounted(() => document.removeEventListener('click', closeLabelMenu))
   align-items: center;
   justify-content: center;
   color: transparent;
-  transition: all 0.15s;
+  transition: all var(--speed-fast);
 }
 
 .played-icon-inline.checked {
-  color: #2ecc71;
+  color: var(--color-success);
   border-color: rgba(46, 204, 113, 0.4);
   background: rgba(46, 204, 113, 0.1);
 }
 
 .played-count-inline {
-  font-size: 0.85rem;
+  font-size: var(--font-sm);
   color: rgba(255,255,255,0.35);
   line-height: 1;
 }

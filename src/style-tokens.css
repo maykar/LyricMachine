@@ -1,0 +1,249 @@
+/* ============================================
+   LyricMachine Design Tokens + Utility Classes
+   ============================================ */
+
+:root {
+  /* ─── Backgrounds ─── */
+  --bg-app: #0e0e0e;
+  --bg-surface: #1a1a1a;
+  --bg-elevated: #111;
+  --bg-input: #0a0a0a;
+  --bg-hover: rgba(255,255,255, 0.08);
+  --bg-hover-subtle: rgba(255,255,255, 0.05);
+
+  /* ─── Borders ─── */
+  --border: #2a2a2a;
+  --border-light: #333;
+
+  /* ─── Text ─── */
+  --text-primary: #e0e0e0;
+  --text-muted: rgba(255,255,255, 0.5);
+  --text-dim: rgba(255,255,255, 0.3);
+  --text-faint: rgba(255,255,255, 0.2);
+
+  /* ─── Accent (gold) ─── */
+  --accent: #f5c542;
+  --accent-10: rgba(245,197,66, 0.10);
+  --accent-15: rgba(245,197,66, 0.15);
+  --accent-25: rgba(245,197,66, 0.25);
+  --accent-30: rgba(245,197,66, 0.30);
+
+  /* ─── Semantic ─── */
+  --color-danger: #e74c3c;
+  --color-success: #2ecc71;
+  --color-teal: #64ffda;
+
+  /* ─── Labels ─── */
+  --label-fresh: #e74c3c;
+  --label-getting-there: #f1c40f;
+  --label-in-setlist: #2ecc71;
+
+  /* ─── Typography ─── */
+  --font-xs: 0.7rem;
+  --font-sm: 0.8rem;
+  --font-md: 0.9rem;
+  --font-lg: 1rem;
+
+  /* ─── Spacing ─── */
+  --space-xs: 0.3rem;
+  --space-sm: 0.4rem;
+  --space-md: 0.5rem;
+  --space-lg: 1rem;
+  --space-xl: 1.25rem;
+
+  /* ─── Radii ─── */
+  --radius-xs: 4px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+
+  /* ─── Transitions ─── */
+  --speed-fast: 0.15s;
+  --speed-normal: 0.2s;
+}
+
+
+/* =====================
+   UTILITY CLASSES
+   ===================== */
+
+/* Full-screen dimmed backdrop */
+.overlay-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Elevated modal / panel container */
+.modal-panel {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  position: relative;
+}
+
+/* Absolute-positioned X close button */
+.close-btn {
+  position: absolute;
+  top: 0.75rem;
+  right: 1rem;
+  background: none;
+  border: none;
+  color: var(--text-faint);
+  font-size: 1.1rem;
+  cursor: pointer;
+  padding: 0.2rem 0.5rem;
+  transition: color var(--speed-fast);
+  z-index: 2;
+}
+.close-btn:hover { color: var(--text-muted); }
+.close-btn--danger:hover { color: var(--color-danger); }
+
+/* Ghost icon button */
+.icon-btn {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  transition: color var(--speed-fast);
+}
+.icon-btn:hover { color: var(--accent); }
+
+/* Dark raised button with border */
+.raised-btn {
+  background: #161616;
+  border: 1px solid var(--border);
+  color: #666;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  font-family: inherit;
+  transition: color var(--speed-normal), border-color var(--speed-normal);
+}
+.raised-btn:hover {
+  color: var(--text-primary);
+  border-color: #444;
+}
+.raised-btn:disabled {
+  opacity: 0.25;
+  cursor: default;
+}
+
+/* Gold-bordered action button */
+.accent-btn {
+  padding: 0.35rem 0.75rem;
+  font-size: var(--font-xs);
+  background: var(--accent-15);
+  border: 1px solid var(--accent-30);
+  border-radius: var(--radius-xs);
+  color: var(--accent);
+  cursor: pointer;
+  transition: all var(--speed-fast);
+}
+.accent-btn:hover { background: var(--accent-25); }
+.accent-btn:disabled { opacity: 0.3; cursor: default; }
+.accent-btn--danger:hover {
+  background: rgba(231, 76, 60, 0.1);
+  border-color: var(--color-danger);
+  color: var(--color-danger);
+}
+
+/* Glassmorphic dropdown container */
+.menu-panel {
+  background: rgba(30, 30, 30, 0.95);
+  backdrop-filter: blur(10px);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  padding: var(--space-xs);
+  min-width: 150px;
+  z-index: 200;
+}
+
+/* Dropdown row button */
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  width: 100%;
+  background: none;
+  border: none;
+  color: rgba(255,255,255, 0.7);
+  padding: 0.4rem 0.6rem;
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+  font-size: var(--font-sm);
+  transition: background var(--speed-fast);
+}
+.menu-item:hover {
+  background: var(--bg-hover);
+  color: #fff;
+}
+.menu-item.active {
+  font-weight: 600;
+  color: var(--accent);
+}
+
+/* Dropdown separator */
+.menu-divider {
+  height: 1px;
+  background: var(--border-light);
+  margin: var(--space-xs) 0;
+}
+
+/* Dark text input with focus ring */
+.form-input {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  padding: 0.3rem 0.5rem;
+  font-size: var(--font-sm);
+  color: var(--text-primary);
+  outline: none;
+  font-family: inherit;
+}
+.form-input:focus {
+  border-color: var(--accent);
+}
+.form-input::placeholder {
+  color: var(--text-faint);
+}
+
+/* Uppercase section heading */
+.section-label {
+  font-size: var(--font-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+}
+
+/* Text truncation */
+.text-truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Colored dot indicator */
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* Thin custom scrollbar */
+.slim-scrollbar::-webkit-scrollbar { width: 4px; }
+.slim-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255, 0.1);
+  border-radius: 2px;
+}

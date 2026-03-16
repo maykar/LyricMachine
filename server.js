@@ -1,12 +1,10 @@
 import express from 'express';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import { setupAPI, loadEnv } from './server/api.js';
+import { setupAPI } from './server/api.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-// Load environment variables
-loadEnv(__dirname);
 
 const app = express();
 

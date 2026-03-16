@@ -2,6 +2,24 @@ import { ref, computed } from 'vue'
 
 const STORAGE_KEY = 'lyricmachine_favorites'
 
+// --- Module-level singleton: one reactive array shared by all consumers ---
+const favorites = ref([])
+
+function loadFromStorage() {
+  try {
+    favorites.value = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]')
+  } catch {
+    favorites.value = []
+  }
+}
+
+function saveToStorage() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(favorites.value))
+}
+
+// Initial load
+loadFromStorage()
+
 export function useFavorites() {
   const currentTitle = ref('')
   const currentLyrics = ref('')
@@ -14,37 +32,25 @@ export function useFavorites() {
   const currentPlayed = ref(false)
   const currentPlayCount = ref(0)
 
+  /** Return the shared reactive array's raw value (for APIs that need a plain array) */
   function getFavorites() {
-    try {
-      const favs = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]')
-      /* Migrate: ensure every fav has a label (default 'fresh') */
-      let migrated = false
-      for (const f of favs) {
-        if (!f.label) { f.label = 'fresh'; migrated = true }
-        /* Migrate boolean played → separate played + playCount */
-        if (typeof f.played === 'number' && f.played > 0 && f.playCount === undefined) {
-          f.playCount = f.played
-          f.played = true
-          migrated = true
-        } else if (typeof f.played === 'number' && f.playCount === undefined) {
-          f.playCount = 0
-          f.played = false
-          migrated = true
-        }
-        if (f.playCount === undefined) {
-          f.playCount = f.played ? 1 : 0
-          migrated = true
-        }
-      }
-      if (migrated) localStorage.setItem(STORAGE_KEY, JSON.stringify(favs))
-      return favs
-    } catch {
-      return []
-    }
+    return favorites.value
   }
 
+  /** Replace the full array and persist */
   function saveFavoritesArray(favs) {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(favs))
+    favorites.value = favs
+    saveToStorage()
+  }
+
+  /** Just persist current state (for in-place mutations) */
+  function saveFavorites() {
+    saveToStorage()
+  }
+
+  /** Reload from localStorage (e.g. after external changes) */
+  function reload() {
+    loadFromStorage()
   }
 
   function refreshSavedState() {
@@ -52,15 +58,13 @@ export function useFavorites() {
       isSaved.value = false
       return
     }
-    const favs = getFavorites()
-    isSaved.value = favs.some(f => f.title === currentTitle.value)
+    isSaved.value = favorites.value.some(f => f.title === currentTitle.value)
   }
 
   function refreshCurrentSong() {
     refreshSavedState()
     if (!currentTitle.value) return
-    const favs = getFavorites()
-    const fav = favs.find(f => f.title === currentTitle.value)
+    const fav = favorites.value.find(f => f.title === currentTitle.value)
     if (fav) {
       songMerge.value = fav.merge || false
       songSeparators.value = fav.separators || false
@@ -78,13 +82,12 @@ export function useFavorites() {
   function toggleStar() {
     if (!currentTitle.value || !currentLyrics.value) return
 
-    const favs = getFavorites()
-    const idx = favs.findIndex(f => f.title === currentTitle.value)
+    const idx = favorites.value.findIndex(f => f.title === currentTitle.value)
 
     if (idx >= 0) {
-      favs.splice(idx, 1)
+      favorites.value.splice(idx, 1)
     } else {
-      favs.push({
+      favorites.value.push({
         title: currentTitle.value,
         lyrics: currentLyrics.value,
         fontAdjust: fontAdjust.value,
@@ -97,18 +100,17 @@ export function useFavorites() {
       })
     }
 
-    saveFavoritesArray(favs)
+    saveToStorage()
     refreshSavedState()
   }
 
   // Persist a single property change to favorites
   function updateFavProp(prop, value) {
     if (!isSaved.value) return
-    const favs = getFavorites()
-    const fav = favs.find(f => f.title === currentTitle.value)
+    const fav = favorites.value.find(f => f.title === currentTitle.value)
     if (fav) {
       fav[prop] = value
-      saveFavoritesArray(favs)
+      saveToStorage()
     }
   }
 
@@ -134,6 +136,7 @@ export function useFavorites() {
 
   return {
     STORAGE_KEY,
+    favorites,
     currentTitle,
     currentLyrics,
     fontAdjust,
@@ -143,6 +146,8 @@ export function useFavorites() {
     isSaved,
     getFavorites,
     saveFavoritesArray,
+    saveFavorites,
+    reload,
     refreshSavedState,
     refreshCurrentSong,
     toggleStar,
