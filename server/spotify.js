@@ -1,5 +1,4 @@
-import { readFileSync } from 'fs'
-import { join } from 'path'
+
 
 // --- Spotify token cache ---
 let spotifyToken = null

@@ -59,7 +59,8 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed } from 'vue'
+import { useEventListener } from '@vueuse/core'
 import StarButton from './StarButton.vue'
 import MdiIcon from './MdiIcon.vue'
 import { mdiMinus, mdiPlus, mdiRefresh, mdiPencil, mdiMagnify, mdiCheck, mdiClose } from '@mdi/js'
@@ -85,11 +86,8 @@ defineEmits([
 
 const showLabelMenu = ref(false)
 
-const labelOptions = [
-  { value: 'fresh', name: 'Fresh', color: '#e74c3c' },
-  { value: 'getting-there', name: 'Getting There', color: '#f1c40f' },
-  { value: 'in-setlist', name: 'In Setlist', color: '#2ecc71' },
-]
+import { LABEL_OPTIONS } from '../constants/labels.js'
+const labelOptions = LABEL_OPTIONS
 
 const labelColor = computed(() => {
   const opt = labelOptions.find(o => o.value === props.currentLabel)
@@ -97,8 +95,7 @@ const labelColor = computed(() => {
 })
 
 function closeLabelMenu() { showLabelMenu.value = false }
-onMounted(() => document.addEventListener('click', closeLabelMenu))
-onUnmounted(() => document.removeEventListener('click', closeLabelMenu))
+useEventListener(document, 'click', closeLabelMenu)
 </script>
 
 <style scoped>
@@ -218,7 +215,7 @@ onUnmounted(() => document.removeEventListener('click', closeLabelMenu))
 
 .label-option:hover {
   background: var(--bg-hover);
-  color: #fff;
+  color: var(--text-primary);
 }
 
 .label-option.active {
@@ -242,7 +239,7 @@ onUnmounted(() => document.removeEventListener('click', closeLabelMenu))
 .played-icon-inline {
   width: 16px;
   height: 16px;
-  border: 1.5px solid #444;
+  border: 1.5px solid var(--border-light);
   border-radius: 3px;
   display: flex;
   align-items: center;
@@ -259,7 +256,7 @@ onUnmounted(() => document.removeEventListener('click', closeLabelMenu))
 
 .played-count-inline {
   font-size: var(--font-sm);
-  color: rgba(255,255,255,0.35);
+  color: var(--text-dim);
   line-height: 1;
 }
 </style>

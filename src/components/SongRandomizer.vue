@@ -127,6 +127,7 @@
 
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
+import { useEventListener } from '@vueuse/core'
 import MdiIcon from './MdiIcon.vue'
 import { mdiClose, mdiCog } from '@mdi/js'
 import confettiModule from 'canvas-confetti'
@@ -171,11 +172,7 @@ function shuffle(arr) {
   return a
 }
 
-function splitTitle(title) {
-  const sep = title.indexOf(' — ')
-  if (sep >= 0) return { artist: title.slice(0, sep), track: title.slice(sep + 3) }
-  return { artist: '', track: title }
-}
+import { splitTitle } from '../utils/titleParser.js'
 
 const activeFilters = ref(['unplayed'])
 const showFilterPanel = ref(false)
@@ -339,6 +336,7 @@ function getOffsetForCardIndex(idx) {
 
 function onSpinClick() {
   if (isSpinning.value) return
+  preloadImpactSound()
 
   landed.value = false
   if (land._resizeHandler) {
@@ -701,20 +699,21 @@ function onKeydown(e) {
   }
 }
 
-onMounted(() => {
-  reshuffleCards()
-  document.addEventListener('click', closeFilterPanel)
-  document.addEventListener('keydown', onKeydown, true)
-
-  // Pre-create AudioContext so it's ready for first click
-  getAudioCtx()
-
-  // Preload impact sound
+// Preload impact sound lazily (AudioContext needs user gesture)
+function preloadImpactSound() {
+  if (impactBuffer) return
   fetch('/special.ogg')
     .then(r => r.arrayBuffer())
     .then(buf => getAudioCtx().decodeAudioData(buf))
     .then(decoded => { impactBuffer = decoded })
     .catch(() => {})
+}
+
+useEventListener(document, 'click', closeFilterPanel)
+useEventListener(document, 'keydown', onKeydown, true)
+
+onMounted(() => {
+  reshuffleCards()
 
   // Warm up Spotify embed so it's ready by spin time
   warmUpSpotifyEmbed()
@@ -732,8 +731,6 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
-  document.removeEventListener('click', closeFilterPanel)
-  document.removeEventListener('keydown', onKeydown, true)
   if (animFrame) cancelAnimationFrame(animFrame)
   if (confettiInterval) clearInterval(confettiInterval)
   if (fireConfetti) fireConfetti.reset()

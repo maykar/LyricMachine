@@ -120,16 +120,7 @@
 
 
         <!-- New Song form -->
-        <div v-if="showNewSong" class="settings-panel">
-          <div class="new-song-form">
-            <div class="new-song-row">
-              <input v-model="newArtist" class="new-song-input" placeholder="Artist" @keydown.enter="$refs.newTrackInput?.focus()" />
-              <input ref="newTrackInput" v-model="newTrack" class="new-song-input" placeholder="Track" @keydown.enter="$refs.newLyricsInput?.focus()" />
-            </div>
-            <textarea ref="newLyricsInput" v-model="newLyrics" class="new-song-lyrics" placeholder="Paste or type lyrics here…" rows="6"></textarea>
-            <button class="new-song-submit" :disabled="!newArtist.trim() || !newTrack.trim()" @click="createNewSong">Create Song</button>
-          </div>
-        </div>
+        <NewSongForm :visible="showNewSong" @created="onNewSong" />
         <div
           v-if="favorites.length"
           class="library-grid favorites-grid"
@@ -190,55 +181,41 @@
 
 
       <!-- Context menu -->
-      <div
-        v-if="ctxMenu.show"
-        class="ctx-menu"
-        :style="{ top: ctxMenu.y + 'px', left: ctxMenu.x + 'px' }"
-        @click.stop
-      >
-        <button
-          v-for="opt in labelOptions" :key="opt.value"
-          class="ctx-option"
-          :class="{ active: ctxMenu.fav?.label === opt.value }"
-          @click="setLabelFromCtx(opt.value)"
-        >
-          <span class="ctx-dot" :style="{ background: opt.color }"></span>
-          {{ opt.name }}
-        </button>
-        <div class="ctx-divider"></div>
-        <button class="ctx-option" @click="incrementPlayedFromCtx">
-          <MdiIcon :path="mdiCheck" :size="14" /> Played{{ ctxMenu.fav?.playCount ? ` (${ctxMenu.fav.playCount})` : '' }}
-        </button>
-        <button class="ctx-option" @click="editPlayCountFromCtx">
-          <MdiIcon :path="mdiPencil" :size="14" /> Edit Count
-        </button>
-        <button class="ctx-option" @click="clearPlayCountFromCtx">
-          <MdiIcon :path="mdiRefresh" :size="14" /> Clear Count
-        </button>
-        <div class="ctx-divider"></div>
-        <button class="ctx-option ctx-delete" @click="deleteFromCtx">
-          <MdiIcon :path="mdiDelete" :size="14" /> Remove
-        </button>
-      </div>
+      <ContextMenu
+        :show="ctxMenu.show"
+        :x="ctxMenu.x"
+        :y="ctxMenu.y"
+        :fav="ctxMenu.fav"
+        @set-label="setLabelFromCtx"
+        @toggle-played="incrementPlayedFromCtx"
+        @edit-count="editPlayCountFromCtx"
+        @clear-count="clearPlayCountFromCtx"
+        @delete="deleteFromCtx"
+        @close="closeContextMenu"
+      />
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import { ref, reactive, computed, watch, onMounted, nextTick } from 'vue'
+import { useEventListener, useDebounceFn } from '@vueuse/core'
 import MdiIcon from './MdiIcon.vue'
+import ContextMenu from './ContextMenu.vue'
+import NewSongForm from './NewSongForm.vue'
 import {
   mdiPlus, mdiDownload, mdiUpload, mdiFilterVariant, mdiRefresh,
   mdiViewColumn, mdiDice5, mdiCog, mdiChevronLeft, mdiChevronRight,
-  mdiCheck, mdiPencil, mdiDelete, mdiSort, mdiHome,
+  mdiSort, mdiHome,
 } from '@mdi/js'
 
-const STORAGE_KEY = 'lyricmachine_favorites'
-const DEFAULTS_KEY = 'lyricmachine_defaults'
+import { useFavorites } from '../composables/useFavorites.js'
+import { splitTitle } from '../utils/titleParser.js'
+import { LABEL_OPTIONS } from '../constants/labels.js'
 
-const props = defineProps({
-  favorites: { type: Array, required: true },
-})
+// Storage keys removed — all persistence via server API
+const { favorites } = useFavorites()
+const labelOptions = LABEL_OPTIONS
 
 const emit = defineEmits(['close', 'go-home', 'select', 'updated', 'defaults-changed', 'toggle-settings', 'open-randomizer', 'open-kanban'])
 
@@ -248,8 +225,8 @@ const favContainerRef = ref(null)
 const backdropMouseDown = ref(false)
 const showSettings = ref(false)
 const showNewSong = ref(false)
-const hidePlayed = ref(JSON.parse(localStorage.getItem('lm_filter_hidePlayed') || 'false'))
-const filterNoChords = ref(JSON.parse(localStorage.getItem('lm_filter_noChords') || 'false'))
+const hidePlayed = ref(false)
+const filterNoChords = ref(false)
 const filterFresh = ref(false)
 const filterGettingThere = ref(false)
 const filterInSetlist = ref(false)
@@ -281,11 +258,7 @@ function toggleSort(field) {
   }
 }
 
-const labelOptions = [
-  { value: 'fresh', name: 'Fresh', color: '#e74c3c' },
-  { value: 'getting-there', name: 'Getting There', color: '#f1c40f' },
-  { value: 'in-setlist', name: 'In Setlist', color: '#2ecc71' },
-]
+
 
 function labelColor(label) {
   const opt = labelOptions.find(o => o.value === label)
@@ -312,8 +285,16 @@ function closeContextMenu() { ctxMenu.show = false }
 
 function setLabelFromCtx(label) {
   if (ctxMenu.index >= 0) {
-    favorites.value[ctxMenu.index].label = label
-    saveFavorites()
+    const fav = favorites.value[ctxMenu.index]
+    fav.label = label
+    if (fav.id) {
+      fetch(`/api/songs/${fav.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ label }),
+      })
+    }
+    emit('updated')
   }
   ctxMenu.show = false
 }
@@ -336,7 +317,14 @@ function incrementPlayedFromCtx() {
     if (fav.played) {
       fav.playCount = (fav.playCount || 0) + 1
     }
-    saveFavorites()
+    if (fav.id) {
+      fetch(`/api/songs/${fav.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ played: fav.played, playCount: fav.playCount }),
+      })
+    }
+    emit('updated')
   }
   ctxMenu.show = false
 }
@@ -349,8 +337,16 @@ function editPlayCountFromCtx() {
     if (input !== null) {
       const num = parseInt(input, 10)
       if (!isNaN(num) && num >= 0) {
-        favorites.value[ctxMenu.index].playCount = num
-        saveFavorites()
+        const fav = favorites.value[ctxMenu.index]
+        fav.playCount = num
+        if (fav.id) {
+          fetch(`/api/songs/${fav.id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ playCount: num }),
+          })
+        }
+        emit('updated')
       }
     }
   }
@@ -358,9 +354,17 @@ function editPlayCountFromCtx() {
 
 function clearPlayCountFromCtx() {
   if (ctxMenu.index >= 0) {
-    favorites.value[ctxMenu.index].playCount = 0
-    favorites.value[ctxMenu.index].played = false
-    saveFavorites()
+    const fav = favorites.value[ctxMenu.index]
+    fav.playCount = 0
+    fav.played = false
+    if (fav.id) {
+      fetch(`/api/songs/${fav.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ playCount: 0, played: false }),
+      })
+    }
+    emit('updated')
   }
   closeContextMenu()
 }
@@ -382,74 +386,38 @@ function closeFilterDropdown(e) {
   if (showSortDropdown.value) showSortDropdown.value = false
 }
 
-watch(hidePlayed, v => localStorage.setItem('lm_filter_hidePlayed', JSON.stringify(v)))
-watch(filterNoChords, v => localStorage.setItem('lm_filter_noChords', JSON.stringify(v)))
-const newArtist = ref('')
-const newTrack = ref('')
-const newLyrics = ref('')
-
-const defaults = ref({
-  altColors: true,
-  separators: false,
-  merge: false,
+watch(hidePlayed, v => {
+  fetch('/api/settings/filters', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ hidePlayed: v, noChords: filterNoChords.value }),
+  })
 })
-
-function loadDefaults() {
-  try {
-    const saved = JSON.parse(localStorage.getItem(DEFAULTS_KEY))
-    if (saved) Object.assign(defaults.value, saved)
-  } catch {}
-}
-
-function saveDefaults() {
-  localStorage.setItem(DEFAULTS_KEY, JSON.stringify(defaults.value))
-  emit('defaults-changed', { ...defaults.value })
-}
-
-const applyStatus = ref('')
-
-function applyDefaultsToAll() {
-  let favs = []
-  try { favs = JSON.parse(localStorage.getItem(STORAGE_KEY)) || [] } catch {}
-  if (!favs.length) {
-    applyStatus.value = 'No favorites to update'
-    setTimeout(() => applyStatus.value = '', 2000)
-    return
-  }
-  for (const fav of favs) {
-    fav.altColors = defaults.value.altColors
-    fav.separators = defaults.value.separators
-    fav.merge = defaults.value.merge
-  }
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(favs))
-  favorites.value = favs
-  applyStatus.value = `Updated ${favs.length} favorites`
-  setTimeout(() => applyStatus.value = '', 2000)
-  emit('updated')
-}
-
-function createNewSong() {
-  const artist = newArtist.value.trim()
-  const track = newTrack.value.trim()
-  if (!artist || !track) return
-
-  const title = `${artist} — ${track}`
-  const lyrics = newLyrics.value || ''
-
-  // Add to favorites
+watch(filterNoChords, v => {
+  fetch('/api/settings/filters', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ hidePlayed: hidePlayed.value, noChords: v }),
+  })
+})
+async function onNewSong({ title, lyrics }) {
+  // Add to favorites via API
   const existing = favorites.value.findIndex(f => f.title === title)
   if (existing < 0) {
-    favorites.value.unshift({ title, lyrics })
-    saveFavorites()
+    try {
+      const res = await fetch('/api/songs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title, lyrics }),
+      })
+      if (res.ok) {
+        const created = await res.json()
+        favorites.value.unshift(created)
+        emit('updated')
+      }
+    } catch {}
   }
-
-  // Load it
   emit('select', { title, lyrics })
-
-  // Reset form
-  newArtist.value = ''
-  newTrack.value = ''
-  newLyrics.value = ''
   showNewSong.value = false
 }
 
@@ -469,7 +437,6 @@ function truncate(str, chars) {
   return str.substring(0, chars) + '…'
 }
 const fileInput = ref(null)
-const favorites = ref([])
 const searchResults = ref([])
 const searching = ref(false)
 const searched = ref(false)
@@ -515,11 +482,12 @@ const favTotalPages = computed(() => Math.max(1, Math.ceil(displayedFavorites.va
 
 const pagedFavorites = computed(() => {
   const start = (favPage.value - 1) * perPage.value
+  // Build index map once per computation for O(1) lookup
+  const indexMap = new Map(favorites.value.map((f, i) => [f, i]))
   return displayedFavorites.value
     .slice(start, start + perPage.value)
     .map((fav, i) => {
-      // Find real index in the full favorites array
-      const realIndex = favorites.value.indexOf(fav)
+      const realIndex = indexMap.get(fav) ?? -1
       return { fav, realIndex }
     })
 })
@@ -545,7 +513,17 @@ function onDrop(toIndex) {
 
   const item = favorites.value.splice(fromIndex, 1)[0]
   favorites.value.splice(toIndex, 0, item)
-  saveFavorites()
+
+  // Persist new order to DB
+  const ids = favorites.value.map(f => f.id).filter(Boolean)
+  if (ids.length) {
+    fetch('/api/songs/reorder', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids }),
+    })
+  }
+  emit('updated')
   dragOverIndex.value = -1
   dragIndex.value = -1
 }
@@ -555,31 +533,17 @@ function onDragEnd() {
   dragOverIndex.value = -1
 }
 
-function splitTitle(title) {
-  const sep = title.indexOf(' — ')
-  if (sep >= 0) {
-    return { artist: title.slice(0, sep), track: title.slice(sep + 3) }
-  }
-  return { artist: '', track: title }
-}
 
-// --- Favorites ---
-function loadFavorites() {
-  try {
-    favorites.value = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]')
-  } catch {
-    favorites.value = []
-  }
-}
 
-function saveFavorites() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(favorites.value))
-  emit('updated')
-}
+// --- Favorites (data owned by parent via prop, mutations go through API) ---
 
 function removeFavorite(index) {
+  const fav = favorites.value[index]
   favorites.value.splice(index, 1)
-  saveFavorites()
+  if (fav && fav.id) {
+    fetch(`/api/songs/${fav.id}`, { method: 'DELETE' })
+  }
+  emit('updated')
   confirmDeleteIndex.value = -1
   if (favPage.value > favTotalPages.value) favPage.value = favTotalPages.value
 }
@@ -600,57 +564,70 @@ function incrementPlayed(index) {
   if (fav.played) {
     fav.playCount = (fav.playCount || 0) + 1
   }
-  saveFavorites()
+  if (fav.id) {
+    fetch(`/api/songs/${fav.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ played: fav.played, playCount: fav.playCount }),
+    })
+  }
+  emit('updated')
 }
 
-function resetAllPlayed() {
+async function resetAllPlayed() {
   for (const fav of favorites.value) {
     fav.played = false
   }
-  saveFavorites()
+  await fetch('/api/songs/bulk-update', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ field: 'played', value: false }),
+  })
+  emit('updated')
 }
 
 function exportFavorites() {
-  const blob = new Blob([JSON.stringify(favorites.value, null, 2)], { type: 'application/json' })
-  const url = URL.createObjectURL(blob)
+  // Download from server API
   const a = document.createElement('a')
-  const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
-  a.href = url
-  a.download = `lyricmachine-favorites-${ts}.json`
+  a.href = '/api/export'
+  a.download = `lyricmachine-favorites-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}.json`
   a.click()
-  URL.revokeObjectURL(url)
 }
 
 function triggerImport() {
   fileInput.value?.click()
 }
 
-function importFavorites(e) {
+async function importFavorites(e) {
   const file = e.target.files[0]
   if (!file) return
 
-  const reader = new FileReader()
-  reader.onload = () => {
-    try {
-      const imported = JSON.parse(reader.result)
-      if (!Array.isArray(imported)) throw new Error()
-      const existing = new Set(favorites.value.map(f => f.title))
-      const newItems = imported.filter(item =>
-        item.title && item.lyrics && !existing.has(item.title)
-      )
-      favorites.value.push(...newItems)
-      saveFavorites()
-    } catch {
-      // silently ignore bad files
+  try {
+    const text = await file.text()
+    const imported = JSON.parse(text)
+    if (!Array.isArray(imported)) throw new Error()
+
+    const res = await fetch('/api/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(imported),
+    })
+    if (res.ok) {
+      // Reload all songs from DB
+      const songsRes = await fetch('/api/songs')
+      if (songsRes.ok) favorites.value = await songsRes.json()
+      emit('updated')
     }
+  } catch {
+    // silently ignore bad files
   }
-  reader.readAsText(file)
   e.target.value = ''
 }
 
 // --- Search with debounce ---
+const debouncedSearch = useDebounceFn((term) => doSearch(term), 400)
+
 watch(query, (val) => {
-  clearTimeout(searchTimer)
   const term = val.trim()
 
   if (!term) {
@@ -662,7 +639,7 @@ watch(query, (val) => {
 
   searching.value = true
   searched.value = false
-  searchTimer = setTimeout(() => doSearch(term), 400)
+  debouncedSearch(term)
 })
 
 async function doSearch(term) {
@@ -684,15 +661,27 @@ function isFavorited(result) {
   return favorites.value.some(f => f.title === title)
 }
 
-function toggleFavoriteResult(result) {
+async function toggleFavoriteResult(result) {
   const title = [result.artistName, result.trackName].filter(Boolean).join(' — ')
   const idx = favorites.value.findIndex(f => f.title === title)
   if (idx >= 0) {
+    const fav = favorites.value[idx]
     favorites.value.splice(idx, 1)
+    if (fav.id) fetch(`/api/songs/${fav.id}`, { method: 'DELETE' })
   } else {
-    favorites.value.push({ title, lyrics: result.plainLyrics })
+    try {
+      const res = await fetch('/api/songs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title, lyrics: result.plainLyrics }),
+      })
+      if (res.ok) {
+        const created = await res.json()
+        favorites.value.push(created)
+      }
+    } catch {}
   }
-  saveFavorites()
+  emit('updated')
 }
 
 function selectResult(result) {
@@ -711,9 +700,20 @@ function onLibraryKeydown(e) {
   }
 }
 
+useEventListener(document, 'click', closeFilterDropdown)
+useEventListener(document, 'click', closeContextMenu)
+useEventListener(document, 'keydown', onLibraryKeydown)
+
 onMounted(async () => {
-  loadFavorites()
-  loadDefaults()
+  // Load filter preferences from server
+  try {
+    const fRes = await fetch('/api/settings/filters')
+    if (fRes.ok) {
+      const filters = await fRes.json()
+      if (filters.hidePlayed !== undefined) hidePlayed.value = filters.hidePlayed
+      if (filters.noChords !== undefined) filterNoChords.value = filters.noChords
+    }
+  } catch {}
   inputRef.value?.focus()
 
   // Measure container to calculate how many rows fit
@@ -723,17 +723,6 @@ onMounted(async () => {
     const available = el.clientHeight - 90
     rowsPerPage.value = Math.max(2, Math.floor(available / CARD_HEIGHT) - 2)
   }
-
-
-  document.addEventListener('click', closeFilterDropdown)
-  document.addEventListener('click', closeContextMenu)
-  document.addEventListener('keydown', onLibraryKeydown)
-})
-
-onBeforeUnmount(() => {
-  document.removeEventListener('click', closeFilterDropdown)
-  document.removeEventListener('click', closeContextMenu)
-  document.removeEventListener('keydown', onLibraryKeydown)
 })
 </script>
 
@@ -741,7 +730,7 @@ onBeforeUnmount(() => {
 .library-overlay .library-panel {
   width: 100vw;
   height: 100vh;
-  background: #0a0a0a;
+  background: var(--bg-input);
   border: none;
   border-radius: 0;
   display: flex;
@@ -762,7 +751,7 @@ onBeforeUnmount(() => {
   font-size: 1.3rem;
   font-family: inherit;
   background: var(--bg-elevated);
-  color: #e8e8e8;
+  color: var(--text-primary);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   outline: none;
@@ -771,7 +760,7 @@ onBeforeUnmount(() => {
 }
 
 .library-input::placeholder {
-  color: rgba(255, 255, 255, 0.25);
+  color: var(--text-dim);
 }
 
 .library-input:focus {
@@ -797,9 +786,9 @@ onBeforeUnmount(() => {
 }
 
 .library-actions .action-btn {
-  background: #161616;
+  background: var(--bg-surface);
   border: 1px solid var(--border);
-  color: #666;
+  color: var(--text-dim);
   aspect-ratio: 1;
   height: 100%;
   padding: 0;
@@ -814,8 +803,8 @@ onBeforeUnmount(() => {
 }
 
 .library-actions .action-btn:hover {
-  color: #e8e8e8;
-  border-color: #444;
+  color: var(--text-primary);
+  border-color: var(--border-light);
 }
 
 .filter-wrapper {
@@ -829,8 +818,8 @@ onBeforeUnmount(() => {
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  background: #64ffda;
-  color: #000;
+  background: var(--color-teal);
+  color: var(--bg-app);
   font-size: 0.6rem;
   font-weight: 700;
   display: flex;
@@ -859,7 +848,7 @@ onBeforeUnmount(() => {
   padding: 0.5rem 1rem;
   cursor: pointer;
   font-size: var(--font-sm);
-  color: #ccc;
+  color: var(--text-muted);
   transition: background var(--speed-fast);
 }
 
@@ -871,7 +860,7 @@ onBeforeUnmount(() => {
 }
 
 .filter-btn.active {
-  color: #64ffda;
+  color: var(--color-teal);
 }
 
 .sort-arrow {
@@ -923,7 +912,7 @@ onBeforeUnmount(() => {
 }
 
 .library-item.drag-over {
-  outline: 2px solid #f5c542;
+  outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
 
@@ -935,7 +924,7 @@ onBeforeUnmount(() => {
   cursor: pointer;
   border-radius: var(--radius-sm);
   background: var(--bg-elevated);
-  border: 1px solid #1e1e1e;
+  border: 1px solid var(--border);
   transition: background var(--speed-fast), border-color var(--speed-fast);
   position: relative;
 }
@@ -959,7 +948,7 @@ onBeforeUnmount(() => {
 
 .play-count {
   font-size: 1.2rem;
-  color: rgba(255,255,255,0.3);
+  color: var(--text-dim);
   user-select: none;
   line-height: 1;
 }
@@ -1064,7 +1053,7 @@ onBeforeUnmount(() => {
 
 .library-item-artist {
   font-size: 1.05rem;
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

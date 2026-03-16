@@ -54,6 +54,7 @@
         :initial-merge="songMerge"
         :initial-separators="songSeparators"
         :initial-alt-colors="songAltColors"
+        :overlay-open="currentView !== null"
         @adjust-changed="onAdjustChanged"
         @merge-changed="onMergeChanged"
         @separators-changed="onSeparatorsChanged"
@@ -78,7 +79,7 @@
       :css="false"
     >
       <ChordDrawer
-        v-if="showChords"
+        v-if="showChords && currentLyrics"
         :loading="chordsLoading"
         :found="chordsFound"
         :sections="chordSections"
@@ -92,7 +93,8 @@
 
     <!-- Spotify Player -->
     <SpotifyPlayer
-      :visible="showPlayer"
+      ref="spotifyPlayerRef"
+      :visible="showPlayer && !!currentLyrics"
       :spotify-track-id="spotifyTrackId"
     />
 
@@ -151,7 +153,7 @@ import { useViewStack } from './composables/useViewStack.js'
 const {
   currentTitle, currentLyrics, fontAdjust,
   songMerge, songSeparators, songAltColors, isSaved, currentLabel, currentPlayed, currentPlayCount,
-  favorites, getFavorites, saveFavoritesArray, saveFavorites,
+  favorites, getFavorites, loadFavorites,
   refreshSavedState, refreshCurrentSong, toggleStar, setLabel, togglePlayed,
   onAdjustChanged, onMergeChanged, onSeparatorsChanged, onAltColorsChanged,
 } = useFavorites()
@@ -168,18 +170,19 @@ const {
   chordSections, chordStructure, chordCapo,
   spotifyTrackId, showPlayer, hasCustomChords,
   fetchChords, onChordsEdited, onResetChords,
-} = useChords(getFavorites, saveFavoritesArray, currentTitle, isSaved)
+} = useChords(favorites, currentTitle, isSaved)
 
 const { startUGImportPoll, stopUGImportPoll } = useUGImport(
-  getFavorites, saveFavoritesArray, currentTitle,
+  favorites, currentTitle,
   { chordSections, chordStructure, chordsFound, showChords }
 )
 
-const { syncPlaylist, backfillAlbumArt } = usePlaylistSync(getFavorites, saveFavoritesArray, userDefaults)
+const { syncPlaylist, backfillAlbumArt } = usePlaylistSync(favorites, userDefaults)
 
 // --- UI state ---
 const { currentView, pushView, popView, clearViews, isOpen } = useViewStack()
 const lyricsRef = ref(null)
+const spotifyPlayerRef = ref(null)
 const editingLyrics = ref(false)
 const editLyricsText = ref('')
 const editTextarea = ref(null)
@@ -194,7 +197,6 @@ function goHome() {
 
 function onKanbanUpdate(updatedFavs) {
   favorites.value = updatedFavs
-  saveFavorites()
 }
 
 function onRandomizerSelect(fav) {
@@ -242,11 +244,16 @@ function exitEditMode() {
   editingLyrics.value = false
 
   if (isSaved.value && currentTitle.value) {
-    const favs = getFavorites()
-    const fav = favs.find(f => f.title === currentTitle.value)
+    const fav = favorites.value.find(f => f.title === currentTitle.value)
     if (fav) {
       fav.lyrics = editLyricsText.value
-      saveFavoritesArray(favs)
+      if (fav.id) {
+        fetch(`/api/songs/${fav.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ lyrics: editLyricsText.value }),
+        })
+      }
     }
   }
 }
@@ -257,18 +264,22 @@ function cancelEditMode() {
 
 // --- Settings wrappers ---
 function handleApplyDefaultsToAll() {
-  applyDefaultsToAll(getFavorites, saveFavoritesArray)
+  applyDefaultsToAll(favorites)
 }
 
 function handleClearAllChords() {
-  clearAllChords(getFavorites, saveFavoritesArray, fetchChords, currentTitle)
+  clearAllChords(favorites, fetchChords, currentTitle)
 }
 
-function clearAllPlayed() {
+async function clearAllPlayed() {
   for (const fav of favorites.value) {
     fav.played = false
   }
-  saveFavorites()
+  await fetch('/api/songs/bulk-update', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ field: 'played', value: false }),
+  })
 }
 
 // --- Footer animation ---
@@ -333,9 +344,8 @@ watch(showPlayer, (val) => {
       }
     }, 1000)
   } else {
-    // Pause playback via postMessage (iframe stays alive)
-    const iframe = document.querySelector('.spotify-embed iframe')
-    if (iframe) iframe.contentWindow?.postMessage({ command: 'toggle' }, '*')
+    // Pause playback via exposed method
+    spotifyPlayerRef.value?.pause()
     clearInterval(focusInterval)
     focusInterval = null
   }
@@ -350,8 +360,10 @@ watch(() => isOpen('library'), (val) => {
 })
 
 // --- Lifecycle ---
-onMounted(() => {
+onMounted(async () => {
+  await loadFavorites()
   loadUserDefaults()
+
   syncPlaylist().then(() => {
     backfillAlbumArt()
   })

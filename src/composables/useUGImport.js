@@ -1,4 +1,4 @@
-export function useUGImport(getFavorites, saveFavoritesArray, currentTitle, chordState) {
+export function useUGImport(favorites, currentTitle, chordState) {
   let ugPollTimer = null
 
   function startUGImportPoll() {
@@ -30,15 +30,26 @@ export function useUGImport(getFavorites, saveFavoritesArray, currentTitle, chor
           chordState.showChords.value = true
 
           if (currentTitle.value) {
-            const favs = getFavorites()
-            const fav = favs.find(f => f.title === currentTitle.value)
+            const fav = favorites.value.find(f => f.title === currentTitle.value)
             if (fav) {
               fav.chordSections = data.sections
               fav.chordStructure = data.structure || ''
               if (data.capo) fav.capo = data.capo
               fav.customChords = data.sections
               fav.customStructure = data.structure || ''
-              saveFavoritesArray(favs)
+
+              // Persist to DB
+              if (fav.id) {
+                fetch(`/api/songs/${fav.id}`, {
+                  method: 'PUT',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    customChords: data.sections,
+                    customStructure: data.structure || '',
+                    capo: data.capo || null,
+                  }),
+                })
+              }
             }
           }
           console.log('UG import applied:', data.sections.length, 'sections')

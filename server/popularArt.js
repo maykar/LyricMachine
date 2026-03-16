@@ -1,5 +1,20 @@
 import { getSpotifyToken } from './spotify.js'
 
+/** Spotify-aware fetch with 429 retry-after handling */
+async function spotifyFetch(url, token, retries = 2) {
+  for (let i = 0; i <= retries; i++) {
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+    if (res.status === 429) {
+      const wait = parseInt(res.headers.get('retry-after') || '2', 10)
+      console.warn(`Spotify 429 — waiting ${wait}s before retry ${i + 1}/${retries}`)
+      await new Promise(r => setTimeout(r, wait * 1000))
+      continue
+    }
+    return res
+  }
+  return { ok: false } // exhausted retries
+}
+
 // --- In-memory cache (24h TTL) ---
 let cachedArts = null
 let cacheExpiry = 0
@@ -21,9 +36,9 @@ export async function handlePopularArt(req, res) {
     const playlistId = process.env.SPOTIFY_PLAYLIST_ID
     if (playlistId) {
       // Get artist IDs from the playlist
-      const plRes = await fetch(
+      const plRes = await spotifyFetch(
         `https://api.spotify.com/v1/playlists/${playlistId}/tracks?fields=items(track(artists(id,name),album(images))),next&limit=100`,
-        { headers: { Authorization: `Bearer ${token}` } }
+        token
       )
       if (plRes.ok) {
         const plData = await plRes.json()
@@ -45,9 +60,9 @@ export async function handlePopularArt(req, res) {
         const artistList = [...artistIds].slice(0, 15)
         for (const artistId of artistList) {
           try {
-            const albumRes = await fetch(
+            const albumRes = await spotifyFetch(
               `https://api.spotify.com/v1/artists/${artistId}/albums?include_groups=album&limit=10`,
-              { headers: { Authorization: `Bearer ${token}` } }
+              token
             )
             if (!albumRes.ok) continue
             const albumData = await albumRes.json()
@@ -69,9 +84,9 @@ export async function handlePopularArt(req, res) {
     // --- Phase 2: Genre search fallback if still need more ---
     if (arts.length < 60) {
       for (const genre of ['grunge', 'punk']) {
-        const searchRes = await fetch(
+        const searchRes = await spotifyFetch(
           `https://api.spotify.com/v1/search?q=genre%3A${genre}&type=track&limit=50&offset=0`,
-          { headers: { Authorization: `Bearer ${token}` } }
+          token
         )
         if (!searchRes.ok) continue
         const data = await searchRes.json()

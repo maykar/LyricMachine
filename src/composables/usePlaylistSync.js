@@ -1,4 +1,4 @@
-export function usePlaylistSync(getFavorites, saveFavoritesArray, userDefaults) {
+export function usePlaylistSync(favorites, userDefaults) {
   // Normalize title for comparison
   const normalize = (s) => s.toLowerCase()
     .replace(/[\u2018\u2019\u201C\u201D`\u00B4\u2032\u2033']/g, "'")
@@ -13,33 +13,13 @@ export function usePlaylistSync(getFavorites, saveFavoritesArray, userDefaults) 
       const data = await res.json()
       if (!data.tracks || !data.tracks.length) return
 
-      let favs = getFavorites()
-
-      // Clean up broken entries
-      const withLyrics = new Set()
-      for (const f of favs) {
-        if (f.lyrics) withLyrics.add(normalize(f.title))
-      }
-      const beforeCount = favs.length
-      favs = favs.filter(f => {
-        if (!f.lyrics && withLyrics.has(normalize(f.title))) return false
-        return true
-      })
-      if (favs.length < beforeCount) {
-        console.log(`Playlist sync: cleaned ${beforeCount - favs.length} broken entries`)
-      }
-
+      const favs = favorites.value
       const existingNormalized = new Set(favs.map(f => normalize(f.title)))
       const newTracks = data.tracks.filter(t => !existingNormalized.has(normalize(t.title)))
 
-      if (newTracks.length === 0 && favs.length === beforeCount) return
-      if (favs.length < beforeCount) {
-        saveFavoritesArray(favs)
-      }
+      if (newTracks.length === 0) return
 
-      if (newTracks.length > 0) {
-        console.log(`Playlist sync: fetching lyrics for ${newTracks.length} new songs...`)
-      }
+      console.log(`Playlist sync: fetching lyrics for ${newTracks.length} new songs...`)
 
       for (const t of newTracks) {
         let lyrics = ''
@@ -60,7 +40,8 @@ export function usePlaylistSync(getFavorites, saveFavoritesArray, userDefaults) 
           console.warn(`Lyrics fetch failed for "${t.title}":`, e.message)
         }
 
-        favs.push({
+        // Create in DB via API
+        const newSong = {
           title: t.title,
           lyrics,
           fontAdjust: 0,
@@ -69,11 +50,22 @@ export function usePlaylistSync(getFavorites, saveFavoritesArray, userDefaults) 
           altColors: userDefaults.value.altColors !== false,
           spotifyTrackId: t.spotifyTrackId || null,
           albumArt: t.albumArt || null,
-        })
-        existingNormalized.add(normalize(t.title))
-        console.log(`Playlist sync: added "${t.track}" ${lyrics ? '(with lyrics)' : '(no lyrics found)'}`)
+        }
 
-        saveFavoritesArray(favs)
+        try {
+          const createRes = await fetch('/api/songs', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(newSong),
+          })
+          if (createRes.ok) {
+            const created = await createRes.json()
+            favs.push(created)
+            existingNormalized.add(normalize(t.title))
+          }
+        } catch {}
+
+        console.log(`Playlist sync: added "${t.track}" ${lyrics ? '(with lyrics)' : '(no lyrics found)'}`)
       }
     } catch (e) {
       console.error('Playlist sync failed:', e.message)
@@ -82,8 +74,7 @@ export function usePlaylistSync(getFavorites, saveFavoritesArray, userDefaults) 
 
   async function backfillAlbumArt() {
     try {
-      const favs = getFavorites()
-
+      const favs = favorites.value
       const missing = favs.filter(f => !f.albumArt && f.title.includes(' — '))
       if (!missing.length) return
 
@@ -102,12 +93,21 @@ export function usePlaylistSync(getFavorites, saveFavoritesArray, userDefaults) 
           const data = await res.json()
           if (data.albumArt) fav.albumArt = data.albumArt
           if (data.spotifyTrackId && !fav.spotifyTrackId) fav.spotifyTrackId = data.spotifyTrackId
+
+          // Persist to DB
+          if (fav.id) {
+            const update = {}
+            if (data.albumArt) update.albumArt = data.albumArt
+            if (data.spotifyTrackId) update.spotifyTrackId = data.spotifyTrackId
+            fetch(`/api/songs/${fav.id}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(update),
+            })
+          }
           saved++
-          // Batch save every 5
-          if (saved % 5 === 0) saveFavoritesArray(favs)
         } catch {}
       }
-      if (saved > 0) saveFavoritesArray(favs)
       console.log(`Album art backfill: updated ${saved} songs`)
     } catch (e) {
       console.error('Album art backfill failed:', e.message)

@@ -1,4 +1,4 @@
-import { onMounted, onUnmounted } from 'vue'
+import { useEventListener } from '@vueuse/core'
 
 export function useKeyboard({
   editingLyrics,
@@ -19,6 +19,8 @@ export function useKeyboard({
 
     if (tag === 'INPUT' || tag === 'TEXTAREA') {
       if (e.key === 'Escape') {
+        e.preventDefault()
+        e.stopImmediatePropagation()
         if (editingLyrics.value) {
           cancelEditMode()
         } else {
@@ -41,9 +43,16 @@ export function useKeyboard({
         if (currentView.value === 'kanban' || currentView.value === 'randomizer') {
           popView()
         } else if (currentView.value === 'library') {
-          goHome()
+          // Go back: if lyrics loaded, show them; otherwise go to dashboard
+          if (currentLyrics.value) {
+            popView()
+          } else {
+            goHome()
+          }
+        } else if (!currentView.value && currentLyrics.value) {
+          // On lyrics page with no overlay — go back to library
+          pushView('library')
         }
-        // No action on Dashboard/Lyrics — use Space to open Library
         break
 
       case 't':
@@ -75,6 +84,5 @@ export function useKeyboard({
     }
   }
 
-  onMounted(() => window.addEventListener('keydown', onKeydown))
-  onUnmounted(() => window.removeEventListener('keydown', onKeydown))
+  useEventListener(window, 'keydown', onKeydown)
 }

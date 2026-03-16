@@ -25,7 +25,8 @@
 </template>
 
 <script setup>
-import { ref, watch, nextTick, onMounted, onUnmounted, computed } from 'vue'
+import { ref, computed, watch, onMounted, nextTick } from 'vue'
+import { useEventListener } from '@vueuse/core'
 
 const props = defineProps({
   lyrics: { type: String, default: '' },
@@ -33,6 +34,7 @@ const props = defineProps({
   initialMerge: { type: Boolean, default: false },
   initialSeparators: { type: Boolean, default: false },
   initialAltColors: { type: Boolean, default: true },
+  overlayOpen: { type: Boolean, default: false },
 })
 
 const emit = defineEmits(['adjust-changed', 'merge-changed', 'separators-changed', 'alt-colors-changed'])
@@ -54,6 +56,15 @@ const showAltColors = ref(true)
 
 const MAX_FONT = 80
 const MIN_FONT = 20
+
+// --- Font size cache: skip binary search on revisit ---
+const fontCache = new Map()
+
+function getCacheKey(lyrics, merge) {
+  const wrapper = wrapperRef.value
+  if (!wrapper) return null
+  return `${lyrics.length}:${wrapper.clientWidth}x${wrapper.clientHeight}:${merge ? 1 : 0}`
+}
 
 // Count only non-empty lines for alternating colors (skip blank separators)
 function isAltLine(col, index) {
@@ -185,6 +196,20 @@ async function calculate() {
   const rawLines = props.lyrics.split('\n')
   const collapsed = collapseRepeats(rawLines)
 
+  // Check font cache — skip binary search on revisit
+  const cacheKey = getCacheKey(props.lyrics, mergeMode.value)
+  if (cacheKey && fontCache.has(cacheKey)) {
+    const cached = fontCache.get(cacheKey)
+    allLines.value = cached.allLines
+    columnCount.value = cached.columnCount
+    linesPerPage.value = cached.linesPerPage
+    totalPages.value = cached.totalPages
+    calculatedFontSize.value = cached.calculatedFontSize
+    fontSize.value = cached.calculatedFontSize + manualAdjust.value
+    currentPage.value = 1
+    return
+  }
+
   // Hide during measurement to prevent flickering
   wrapper.style.visibility = 'hidden'
 
@@ -213,6 +238,7 @@ async function calculate() {
     }
     calculatedFontSize.value = best2
     fontSize.value = best2 + manualAdjust.value
+    if (cacheKey) fontCache.set(cacheKey, { allLines: allLines.value, columnCount: columnCount.value, linesPerPage: linesPerPage.value, totalPages: totalPages.value, calculatedFontSize: best2 })
     wrapper.style.visibility = ''
     return
   }
@@ -236,6 +262,7 @@ async function calculate() {
     }
     calculatedFontSize.value = best3
     fontSize.value = best3 + manualAdjust.value
+    if (cacheKey) fontCache.set(cacheKey, { allLines: allLines.value, columnCount: columnCount.value, linesPerPage: linesPerPage.value, totalPages: totalPages.value, calculatedFontSize: best3 })
     wrapper.style.visibility = ''
     return
   }
@@ -265,6 +292,7 @@ async function calculate() {
     if (best >= MIN_FONT) {
       calculatedFontSize.value = best
       fontSize.value = best + manualAdjust.value
+      if (cacheKey) fontCache.set(cacheKey, { allLines: allLines.value, columnCount: columnCount.value, linesPerPage: linesPerPage.value, totalPages: totalPages.value, calculatedFontSize: best })
       wrapper.style.visibility = ''
       return
     }
@@ -316,7 +344,7 @@ async function recheckPages() {
 function onKeydown(e) {
   if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return
   // Don't capture keys when an overlay is open
-  if (document.querySelector('.overlay-backdrop')) return
+  if (props.overlayOpen) return
 
   if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
     if (totalPages.value <= 1) return
@@ -385,22 +413,18 @@ watch(() => props.initialAltColors, (val) => {
 
 let resizeTimer = null
 function onResize() {
+  fontCache.clear()
   clearTimeout(resizeTimer)
   resizeTimer = setTimeout(() => {
     if (props.lyrics) calculate()
   }, 150)
 }
 
-onMounted(() => {
-  window.addEventListener('resize', onResize)
-  window.addEventListener('keydown', onKeydown)
-  if (props.lyrics) nextTick(() => calculate())
-})
+useEventListener(window, 'resize', onResize)
+useEventListener(window, 'keydown', onKeydown)
 
-onUnmounted(() => {
-  window.removeEventListener('resize', onResize)
-  window.removeEventListener('keydown', onKeydown)
-  clearTimeout(resizeTimer)
+onMounted(() => {
+  if (props.lyrics) nextTick(() => calculate())
 })
 
 function adjustFont(delta) {

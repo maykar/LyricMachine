@@ -16,7 +16,7 @@
       <div class="favorites-list" v-if="favorites.length">
         <div
           v-for="(fav, i) in favorites"
-          :key="i"
+          :key="fav.id || i"
           class="favorite-item"
           @click="$emit('select', fav)"
         >
@@ -45,72 +45,57 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
-
-const STORAGE_KEY = 'lyricmachine_favorites'
+import { ref } from 'vue'
+import { useFavorites } from '../composables/useFavorites.js'
 
 const emit = defineEmits(['close', 'select', 'updated'])
 
-const favorites = ref([])
+const { favorites } = useFavorites()
 const fileInput = ref(null)
 
-function loadFavorites() {
-  try {
-    favorites.value = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]')
-  } catch {
-    favorites.value = []
+async function removeFavorite(index) {
+  const fav = favorites.value[index]
+  favorites.value.splice(index, 1)
+  if (fav && fav.id) {
+    await fetch(`/api/songs/${fav.id}`, { method: 'DELETE' })
   }
-}
-
-function saveFavorites() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(favorites.value))
   emit('updated')
 }
 
-function removeFavorite(index) {
-  favorites.value.splice(index, 1)
-  saveFavorites()
-}
-
 function exportFavorites() {
-  const blob = new Blob([JSON.stringify(favorites.value, null, 2)], { type: 'application/json' })
-  const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
-  a.href = url
+  a.href = '/api/export'
   a.download = 'lyricmachine-favorites.json'
   a.click()
-  URL.revokeObjectURL(url)
 }
 
 function triggerImport() {
   fileInput.value?.click()
 }
 
-function importFavorites(e) {
+async function importFavorites(e) {
   const file = e.target.files[0]
   if (!file) return
 
-  const reader = new FileReader()
-  reader.onload = () => {
-    try {
-      const imported = JSON.parse(reader.result)
-      if (!Array.isArray(imported)) throw new Error()
+  try {
+    const text = await file.text()
+    const imported = JSON.parse(text)
+    if (!Array.isArray(imported)) throw new Error()
 
-      // Merge: add items that don't already exist by title
-      const existing = new Set(favorites.value.map(f => f.title))
-      const newItems = imported.filter(item =>
-        item.title && item.lyrics && !existing.has(item.title)
-      )
-      favorites.value.push(...newItems)
-      saveFavorites()
-    } catch {
-      // silently ignore bad files
+    const res = await fetch('/api/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(imported),
+    })
+    if (res.ok) {
+      // Reload from DB
+      const songsRes = await fetch('/api/songs')
+      if (songsRes.ok) favorites.value = await songsRes.json()
+      emit('updated')
     }
+  } catch {
+    // silently ignore bad files
   }
-  reader.readAsText(file)
-  // Reset input so re-importing the same file works
   e.target.value = ''
 }
-
-onMounted(loadFavorites)
 </script>

@@ -1,19 +1,9 @@
 import { readFileSync } from 'fs'
 import { join } from 'path'
 import { parseChordHTML } from './chordParser.js'
+import { parseBody } from './api.js'
 
 let pendingImport = null
-
-function parseBody(req) {
-  return new Promise((resolve, reject) => {
-    let body = ''
-    req.on('data', chunk => body += chunk)
-    req.on('end', () => {
-      try { resolve(JSON.parse(body)) } catch { reject(new Error('Invalid JSON')) }
-    })
-    req.on('error', reject)
-  })
-}
 
 export function setupUGImportRoutes(server) {
   /* POST /api/import-raw — bookmarklet sends raw pre.innerHTML, server parses */
@@ -59,21 +49,18 @@ export function setupUGImportRoutes(server) {
 
 export function setupBookmarkletRoutes(server, serverDir) {
   const bookmarkletPath = join(serverDir, 'bookmarklet.js')
-
-  function getBookmarkletCode() {
-    return readFileSync(bookmarkletPath, 'utf-8')
-  }
+  // Cache bookmarklet code at startup
+  const bookmarkletCode = readFileSync(bookmarkletPath, 'utf-8')
 
   server.use('/api/bookmarklet.js', (req, res) => {
     res.writeHead(200, { 'Content-Type': 'application/javascript' })
-    res.end(getBookmarkletCode())
+    res.end(bookmarkletCode)
   })
 
   server.use('/api/bookmarklet', (req, res) => {
-    const bookmarkletCode = getBookmarkletCode()
     const minified = bookmarkletCode.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\s+/g, ' ').trim()
     const href = 'javascript:' + encodeURIComponent(minified)
-    res.writeHead(200, { 'Content-Type': 'text/html' })
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
     res.end(`<!DOCTYPE html>
 <html><head><title>UG Import Bookmarklet Setup</title>
 <style>

@@ -1,6 +1,6 @@
 import { ref, computed } from 'vue'
 
-export function useChords(getFavorites, saveFavoritesArray, currentTitle, isSaved) {
+export function useChords(favorites, currentTitle, isSaved) {
   const showChords = ref(false)
   const chordsLoading = ref(false)
   const chordsFound = ref(false)
@@ -12,13 +12,12 @@ export function useChords(getFavorites, saveFavoritesArray, currentTitle, isSave
 
   const hasCustomChords = computed(() => {
     if (!currentTitle.value) return false
-    const favs = getFavorites()
-    const fav = favs.find(f => f.title === currentTitle.value)
+    const fav = favorites.value.find(f => f.title === currentTitle.value)
     return !!(fav && fav.customChords)
   })
 
-  // Fetch Spotify track ID from the API and cache it in favorites
-  async function fetchSpotifyId(artist, track, fav, favs) {
+  // Fetch Spotify track ID from the API and cache it in the DB
+  async function fetchSpotifyId(artist, track, fav) {
     try {
       const res = await fetch(
         `/api/spotify-id?artist=${encodeURIComponent(artist)}&track=${encodeURIComponent(track)}`
@@ -30,7 +29,16 @@ export function useChords(getFavorites, saveFavoritesArray, currentTitle, isSave
         if (fav) {
           fav.spotifyTrackId = data.spotifyTrackId
           if (data.albumArt) fav.albumArt = data.albumArt
-          saveFavoritesArray(favs)
+          // Persist to DB
+          if (fav.id) {
+            const update = { spotifyTrackId: data.spotifyTrackId }
+            if (data.albumArt) update.albumArt = data.albumArt
+            fetch(`/api/songs/${fav.id}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(update),
+            })
+          }
         }
       }
     } catch {}
@@ -57,8 +65,7 @@ export function useChords(getFavorites, saveFavoritesArray, currentTitle, isSave
     chordCapo.value = null
     if (!keepDrawerOpen) spotifyTrackId.value = null
 
-    const favs = getFavorites()
-    const fav = favs.find(f => f.title === title)
+    const fav = favorites.value.find(f => f.title === title)
 
     // Load saved chords from favorites
     if (fav && fav.customChords) {
@@ -71,7 +78,7 @@ export function useChords(getFavorites, saveFavoritesArray, currentTitle, isSave
 
       // Background-fetch Spotify ID if not cached yet
       if (!fav.spotifyTrackId) {
-        fetchSpotifyId(artist, track, fav, favs)
+        fetchSpotifyId(artist, track, fav)
       }
       return
     }
@@ -79,33 +86,43 @@ export function useChords(getFavorites, saveFavoritesArray, currentTitle, isSave
     // No saved chords — show "no chords found" but still fetch Spotify ID
     chordsLoading.value = false
     chordsFound.value = false
-    fetchSpotifyId(artist, track, fav, favs)
+    fetchSpotifyId(artist, track, fav)
   }
 
-  function onChordsEdited({ sections, structure }) {
+  async function onChordsEdited({ sections, structure }) {
     chordSections.value = sections
     chordStructure.value = structure
     chordsFound.value = sections.length > 0
 
     if (currentTitle.value) {
-      const favs = getFavorites()
-      const fav = favs.find(f => f.title === currentTitle.value)
+      const fav = favorites.value.find(f => f.title === currentTitle.value)
       if (fav) {
         fav.customChords = sections
         fav.customStructure = structure
-        saveFavoritesArray(favs)
+        if (fav.id) {
+          fetch(`/api/songs/${fav.id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ customChords: sections, customStructure: structure }),
+          })
+        }
       }
     }
   }
 
-  function onResetChords() {
+  async function onResetChords() {
     if (!currentTitle.value) return
-    const favs = getFavorites()
-    const fav = favs.find(f => f.title === currentTitle.value)
+    const fav = favorites.value.find(f => f.title === currentTitle.value)
     if (fav) {
       delete fav.customChords
       delete fav.customStructure
-      saveFavoritesArray(favs)
+      if (fav.id) {
+        fetch(`/api/songs/${fav.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ customChords: null, customStructure: '' }),
+        })
+      }
     }
     fetchChords(currentTitle.value, { keepDrawerOpen: true })
   }

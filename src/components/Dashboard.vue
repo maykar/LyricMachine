@@ -1,21 +1,9 @@
 <template>
   <div class="dashboard">
     <!-- Album art mosaic background -->
-    <div v-if="mosaicArts.length || DEBUG_MOSAIC" class="mosaic-wrap">
-      <div ref="gridRef" class="mosaic-grid" :style="{ '--cols': mosaicCols * 2 }">
-        <template v-if="DEBUG_MOSAIC">
-          <div
-            v-for="(cell, i) in debugTiles"
-            :key="i"
-            class="mosaic-tile debug-tile"
-            :class="{ 'debug-panel-b': cell.panel === 'B' }"
-            :style="{ background: cell.color }"
-          >
-            <span class="debug-label">{{ cell.label }}</span>
-          </div>
-        </template>
-        <template v-else>
-          <img
+    <div v-if="mosaicArts.length" class="mosaic-wrap">
+      <div ref="gridRef" class="mosaic-grid" :class="{ 'mosaic-ready': mosaicReady }" :style="{ '--cols': mosaicCols * 2 }">
+        <img
             v-for="(art, i) in mosaicTiles"
             :key="i"
             :src="art"
@@ -23,15 +11,10 @@
             alt=""
             loading="lazy"
           />
-        </template>
       </div>
-      <!-- Tilt-shift blur: progressive DOF layers -->
-      <div class="mosaic-tiltblur ts-top ts-light"></div>
-      <div class="mosaic-tiltblur ts-top ts-medium"></div>
-      <div class="mosaic-tiltblur ts-top ts-heavy"></div>
-      <div class="mosaic-tiltblur ts-bottom ts-light"></div>
-      <div class="mosaic-tiltblur ts-bottom ts-medium"></div>
-      <div class="mosaic-tiltblur ts-bottom ts-heavy"></div>
+      <!-- Tilt-shift blur: single top + bottom DOF layer -->
+      <div class="mosaic-tiltblur ts-top"></div>
+      <div class="mosaic-tiltblur ts-bottom"></div>
       <div class="mosaic-overlay"></div>
       <!-- Search button -->
       <button class="dashboard-search-btn" @click.stop="$emit('open-library')" title="Browse Library">
@@ -111,11 +94,11 @@
 </template>
 
 <script setup>
-import { computed, ref, onMounted, onUnmounted } from 'vue'
+import { computed, ref, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import MdiIcon from './MdiIcon.vue'
 import { mdiMagnify } from '@mdi/js'
 
-const DEBUG_MOSAIC = false // ← flip to true for debug grid
+import { splitTitle } from '../utils/titleParser.js'
 
 const props = defineProps({
   favorites: { type: Array, default: () => [] },
@@ -125,8 +108,10 @@ defineEmits(['select', 'open-kanban', 'open-library'])
 
 const totalSongs = computed(() => props.favorites.length)
 
-const labelColors = { fresh: '#e74c3c', 'getting-there': '#f1c40f', 'in-setlist': '#2ecc71' }
-const labelNames = { fresh: 'Fresh', 'getting-there': 'Getting There', 'in-setlist': 'In Setlist' }
+import { LABEL_OPTIONS } from '../constants/labels.js'
+
+const labelColors = Object.fromEntries(LABEL_OPTIONS.map(o => [o.value, o.color]))
+const labelNames = Object.fromEntries(LABEL_OPTIONS.map(o => [o.value, o.name]))
 
 const labelSegments = computed(() => {
   const counts = { fresh: 0, 'getting-there': 0, 'in-setlist': 0 }
@@ -242,85 +227,33 @@ const mosaicTiles = computed(() => {
   return tiled
 })
 
-// Diagnostics for mosaic grid
-const mosaicDiag = computed(() => {
-  const tiles = mosaicTiles.value
-  if (!tiles.length) return { path: '-', dupes: 0, unique: 0 }
-  const cols = mosaicCols.value
-  // Only check Panel A (first half of each row)
-  const panelA = []
-  const rows = MOSAIC_ROWS
-  for (let r = 0; r < rows; r++) {
-    for (let c = 0; c < cols; c++) {
-      panelA.push(tiles[r * cols * 2 + c])
-    }
-  }
-  const unique = new Set(panelA).size
-  const dupes = panelA.length - unique
-  const path = mosaicArts.value.length >= cols * rows ? 'SHUFFLE' : 'GREEDY'
-  if (dupes > 0) {
-    const seen = new Map()
-    panelA.forEach((art, i) => {
-      const r = Math.floor(i / cols)
-      const c = i % cols
-      const letters = 'abcdefghijklmnopqrstuvwxyz'
-      const label = `${r + 1}${letters[c]}`
-      if (seen.has(art)) seen.get(art).push(label)
-      else seen.set(art, [label])
+
+// Image preloading — fade in only after ALL tiles are loaded
+const mosaicReady = ref(false)
+
+watch(mosaicTiles, (tiles) => {
+  if (!tiles.length) { mosaicReady.value = false; return }
+  mosaicReady.value = false
+  const unique = [...new Set(tiles)]
+  Promise.all(unique.map(src => new Promise(resolve => {
+    const img = new Image()
+    img.onload = resolve
+    img.onerror = resolve // don't block on broken images
+    img.src = src
+  }))).then(() => {
+    mosaicReady.value = true
+    // Start scrolling once images are visible
+    nextTick(() => {
+      if (gridRef.value && !animId) {
+        animId = requestAnimationFrame(animate)
+      }
     })
-    for (const [art, labels] of seen) {
-      if (labels.length > 1) console.warn('DUPE:', labels.join(' = '), art)
-    }
-  }
-  return { path, dupes, unique }
-})
+  })
+}, { immediate: true })
 
-// Labels matching mosaicTiles layout (Panel A + Panel B per row)
-const tileLabels = computed(() => {
-  const cols = mosaicCols.value
-  const rows = MOSAIC_ROWS
-  const letters = 'abcdefghijklmnopqrstuvwxyz'
-  const labels = []
-  for (let r = 0; r < rows; r++) {
-    for (let panel = 0; panel < 2; panel++) {
-      for (let c = 0; c < cols; c++) {
-        labels.push(`${r + 1}${letters[c]}${panel === 1 ? "'" : ''}`)
-      }
-    }
-  }
-  return labels
-})
 
-const debugRows = computed(() => MOSAIC_ROWS)
 
-// Debug tiles: labeled cells showing row number + column letter, colored by column
-const debugTiles = computed(() => {
-  const cols = mosaicCols.value
-  const rows = debugRows.value
-  const letters = 'abcdefghijklmnopqrstuvwxyz'
-  const hueStep = 360 / cols
-  const tiles = []
-  // Panel A then Panel B for each row
-  for (let r = 0; r < rows; r++) {
-    for (let panel = 0; panel < 2; panel++) {
-      for (let c = 0; c < cols; c++) {
-        const hue = (c * hueStep) % 360
-        tiles.push({
-          label: `${r + 1}${letters[c % 26]}`,
-          color: `hsl(${hue}, 60%, ${panel === 0 ? 35 : 25}%)`,
-          panel: panel === 0 ? 'A' : 'B',
-        })
-      }
-    }
-  }
-  return tiles
-})
 
-function splitTitle(title) {
-  const sep = title.indexOf(' — ')
-  if (sep < 0) return { artist: '', track: title }
-  return { artist: title.substring(0, sep), track: title.substring(sep + 3) }
-}
 
 // Infinite horizontal scroll via requestAnimationFrame
 const gridRef = ref(null)
@@ -328,8 +261,7 @@ let animId = null
 let scrollX = 0
 const SCROLL_SPEED = 0.3 // pixels per frame (~18px/sec at 60fps)
 
-const debugStats = ref({ scrollX: 0, halfWidth: 0, progress: 0 })
-const debugScale = ref(1.2)
+const SCALE = 1.2
 
 function animate() {
   if (!gridRef.value) return
@@ -338,31 +270,11 @@ function animate() {
   if (halfWidth > 0 && Math.abs(scrollX) >= halfWidth) {
     scrollX += halfWidth
   }
-  gridRef.value.style.transform = `rotateX(20deg) scale(${debugScale.value}) translateX(${scrollX}px)`
-
-  debugStats.value = {
-    scrollX: Math.round(scrollX),
-    halfWidth: Math.round(halfWidth),
-    progress: halfWidth > 0 ? Math.round((Math.abs(scrollX) / halfWidth) * 100) : 0,
-  }
-
+  gridRef.value.style.transform = `rotateX(20deg) scale(${SCALE}) translateX(${scrollX}px)`
   animId = requestAnimationFrame(animate)
 }
 
-function jumpToStart() {
-  scrollX = 0
-}
-
-function jumpToEnd() {
-  if (!gridRef.value) return
-  const halfWidth = gridRef.value.scrollWidth / 2
-  scrollX = -(halfWidth - 1)
-}
-
 onMounted(() => {
-  // Start scrolling after the fade-in completes
-  setTimeout(() => { animId = requestAnimationFrame(animate) }, 900)
-
   // Fetch popular rock album art for mosaic placeholders
   fetch('/api/popular-art')
     .then(r => r.ok ? r.json() : { arts: [] })
@@ -428,102 +340,13 @@ onUnmounted(() => {
   position: absolute;
   top: -50%;
   left: -50%;
-  transform: rotateX(20deg) scale(1.2);
   transform-origin: center center;
   opacity: 0;
-  animation: mosaicFadeIn 0.8s ease 0.1s forwards;
+  transition: opacity 0.8s ease;
 }
 
-@keyframes mosaicFadeIn {
-  to { opacity: 0.25; }
-}
-
-/* Debug mode */
-.debug-tile {
-  position: relative;
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  overflow: hidden;
-}
-
-.tile-img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-}
-
-.debug-panel-b {
-  border-color: rgba(255, 80, 80, 0.6);
-}
-
-.debug-label {
-  position: absolute;
-  font-size: 1.4rem;
-  font-weight: 900;
-  color: white;
-  text-shadow: 0 2px 6px rgba(0, 0, 0, 1), 0 0 10px rgba(0, 0, 0, 0.8);
-  pointer-events: none;
-  line-height: 1;
-}
-.dl-tl { top: 3px; left: 4px; }
-.dl-tr { top: 3px; right: 4px; }
-.dl-bl { bottom: 3px; left: 4px; }
-.dl-br { bottom: 3px; right: 4px; }
-
-.debug-hud {
-  position: fixed;
-  top: 10px;
-  right: 10px;
-  z-index: 9999;
-  background: rgba(0, 0, 0, 0.85);
-  color: #0f0;
-  font-family: monospace;
-  font-size: 13px;
-  padding: 10px 14px;
-  border-radius: 6px;
-  line-height: 1.6;
-}
-
-.debug-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.debug-slider {
-  width: 100px;
-  accent-color: #0f0;
-}
-
-.debug-buttons {
-  display: flex;
-  gap: 6px;
-  margin-top: 6px;
-}
-
-.debug-buttons button {
-  flex: 1;
-  padding: 4px 8px;
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid #0f0;
-  color: #0f0;
-  font-family: monospace;
-  font-size: 12px;
-  border-radius: 4px;
-  cursor: pointer;
-}
-
-.debug-buttons button:hover {
-  background: rgba(0, 255, 0, 0.15);
-}
-
-/* In debug mode, make grid fully visible */
-.mosaic-grid:has(.debug-tile) {
-  animation: mosaicFadeInDebug 0.3s ease forwards !important;
-}
-
-@keyframes mosaicFadeInDebug {
-  to { opacity: 1; }
+.mosaic-grid.mosaic-ready {
+  opacity: 0.25;
 }
 
 .mosaic-tile {
@@ -540,7 +363,7 @@ onUnmounted(() => {
   z-index: 1;
 }
 
-/* Tilt-shift: progressive DOF blur (3 layers per edge) */
+/* Tilt-shift: single DOF blur per edge */
 .mosaic-tiltblur {
   position: absolute;
   left: 0;
@@ -548,50 +371,20 @@ onUnmounted(() => {
   pointer-events: none;
 }
 
-/* Top DOF — shorter and subtler */
-.ts-top.ts-light {
-  height: 30%;
-  backdrop-filter: blur(2px);
-  -webkit-backdrop-filter: blur(2px);
-}
-.ts-top.ts-medium {
-  height: 18%;
-  backdrop-filter: blur(5px);
-  -webkit-backdrop-filter: blur(5px);
-}
-.ts-top.ts-heavy {
-  height: 10%;
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-}
-
-/* Bottom DOF — stronger depth blur */
-.ts-bottom.ts-light {
-  height: 55%;
-  backdrop-filter: blur(3px);
-  -webkit-backdrop-filter: blur(3px);
-}
-.ts-bottom.ts-medium {
-  height: 38%;
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-}
-.ts-bottom.ts-heavy {
-  height: 22%;
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
-}
-
-/* Top edge: fade from solid at top to transparent */
 .ts-top {
   top: 0;
+  height: 30%;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
   mask-image: linear-gradient(to bottom, black 0%, transparent 100%);
   -webkit-mask-image: linear-gradient(to bottom, black 0%, transparent 100%);
 }
 
-/* Bottom edge: fade from solid at bottom to transparent */
 .ts-bottom {
   bottom: 0;
+  height: 55%;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
   mask-image: linear-gradient(to top, black 0%, transparent 100%);
   -webkit-mask-image: linear-gradient(to top, black 0%, transparent 100%);
 }
@@ -802,7 +595,7 @@ onUnmounted(() => {
 .play-badge {
   margin-left: auto;
   font-size: 1.1rem;
-  color: #f5c542;
+  color: var(--accent);
   font-weight: 600;
   flex-shrink: 0;
   opacity: 0.7;

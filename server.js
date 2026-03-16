@@ -8,6 +8,9 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const app = express();
 
+// JSON body parsing for POST/PUT routes
+app.use(express.json({ limit: '10mb' }));
+
 // API routes
 setupAPI(app);
 

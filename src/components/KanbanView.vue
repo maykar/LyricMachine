@@ -49,17 +49,16 @@ import confettiModule from 'canvas-confetti'
 import MdiIcon from './MdiIcon.vue'
 import { mdiClose } from '@mdi/js'
 
+import { splitTitle } from '../utils/titleParser.js'
+import { LABEL_OPTIONS } from '../constants/labels.js'
+
 const props = defineProps({
   favorites: { type: Array, required: true },
 })
 
 const emit = defineEmits(['update', 'close'])
 
-const columns = [
-  { value: 'fresh', name: 'Fresh', color: '#e74c3c' },
-  { value: 'getting-there', name: 'Getting There', color: '#f1c40f' },
-  { value: 'in-setlist', name: 'In Setlist', color: '#2ecc71' },
-]
+const columns = LABEL_OPTIONS
 
 const backdropDown = ref(false)
 const dragOverCol = ref(null)
@@ -77,11 +76,7 @@ function columnItems(label) {
   return props.favorites.filter(f => (f.label || 'fresh') === label)
 }
 
-function splitTitle(title) {
-  const sep = title.indexOf(' — ')
-  if (sep >= 0) return { artist: title.slice(0, sep), track: title.slice(sep + 3) }
-  return { artist: '', track: title }
-}
+
 
 function onDragStart(item, e) {
   dragItem = item
@@ -109,6 +104,15 @@ function onDrop(targetLabel) {
   if (fav) {
     fav.label = targetLabel
     emit('update', updated)
+
+    // Persist label change to DB
+    if (fav.id) {
+      fetch(`/api/songs/${fav.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ label: targetLabel }),
+      })
+    }
 
     /* Celebrate moving to "In Setlist" */
     if (targetLabel === 'in-setlist') {
@@ -194,7 +198,6 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-@import url('https://fonts.googleapis.com/css2?family=Bangers&display=swap');
 
 .kanban-panel {
   background: var(--bg-app);
@@ -259,7 +262,7 @@ onUnmounted(() => {
   flex: 1;
   display: flex;
   flex-direction: column;
-  background: #141414;
+  background: var(--bg-elevated);
   border-radius: var(--radius-md);
   border: 1px solid var(--border);
   transition: border-color var(--speed-normal), box-shadow var(--speed-normal);
@@ -267,7 +270,7 @@ onUnmounted(() => {
 
 .kanban-col.drag-target {
   border-color: var(--col-color);
-  box-shadow: 0 0 12px rgba(255,255,255,0.05);
+  box-shadow: 0 0 12px var(--bg-hover-subtle);
 }
 
 .kanban-col-header {
@@ -319,7 +322,7 @@ onUnmounted(() => {
 }
 
 .kanban-col-body::-webkit-scrollbar-thumb:hover {
-  background: #444;
+  background: var(--border-light);
 }
 
 .kanban-card {
@@ -335,7 +338,7 @@ onUnmounted(() => {
 }
 
 .kanban-card:hover {
-  background: #222;
+  background: var(--border);
   border-color: var(--border-light);
 }
 
@@ -345,12 +348,12 @@ onUnmounted(() => {
 
 .kanban-card-artist {
   font-size: 1.05rem;
-  color: rgba(255,255,255,0.35);
+  color: var(--text-dim);
 }
 
 .kanban-card-track {
   font-size: 1.3rem;
-  color: rgba(255,255,255,0.8);
+  color: var(--text-primary);
 }
 
 .kanban-empty {

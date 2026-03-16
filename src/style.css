@@ -8,8 +8,8 @@
 html, body {
   height: 100%;
   overflow: hidden;
-  background: #000000;
-  color: #e8e8e8;
+  background: var(--bg-app);
+  color: var(--text-primary);
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -85,8 +85,8 @@ html, body {
   bottom: 0;
   width: 100%;
   height: 100%;
-  background: #0d0d0d;
-  color: #ddd;
+  background: var(--bg-app);
+  color: var(--text-primary);
   border: none;
   padding: 1.5rem 2rem;
   font-family: 'Inter', sans-serif;

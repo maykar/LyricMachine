@@ -1,24 +1,44 @@
 import { ref, computed } from 'vue'
 
-const STORAGE_KEY = 'lyricmachine_favorites'
-
 // --- Module-level singleton: one reactive array shared by all consumers ---
 const favorites = ref([])
+let loaded = false
 
-function loadFromStorage() {
+/** Fetch all songs from the server and populate the reactive cache */
+async function loadFavorites() {
   try {
-    favorites.value = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]')
-  } catch {
-    favorites.value = []
+    const res = await fetch('/api/songs')
+    if (res.ok) favorites.value = await res.json()
+    loaded = true
+  } catch (err) {
+    console.error('Failed to load favorites:', err.message)
   }
 }
 
-function saveToStorage() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(favorites.value))
+/** POST a new song or update existing by title */
+async function apiCreateSong(song) {
+  const res = await fetch('/api/songs', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(song),
+  })
+  return res.ok ? await res.json() : null
 }
 
-// Initial load
-loadFromStorage()
+/** PUT partial update to a song by ID */
+async function apiUpdateSong(id, fields) {
+  const res = await fetch(`/api/songs/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(fields),
+  })
+  return res.ok ? await res.json() : null
+}
+
+/** DELETE a song by ID */
+async function apiDeleteSong(id) {
+  await fetch(`/api/songs/${id}`, { method: 'DELETE' })
+}
 
 export function useFavorites() {
   const currentTitle = ref('')
@@ -35,22 +55,6 @@ export function useFavorites() {
   /** Return the shared reactive array's raw value (for APIs that need a plain array) */
   function getFavorites() {
     return favorites.value
-  }
-
-  /** Replace the full array and persist */
-  function saveFavoritesArray(favs) {
-    favorites.value = favs
-    saveToStorage()
-  }
-
-  /** Just persist current state (for in-place mutations) */
-  function saveFavorites() {
-    saveToStorage()
-  }
-
-  /** Reload from localStorage (e.g. after external changes) */
-  function reload() {
-    loadFromStorage()
   }
 
   function refreshSavedState() {
@@ -79,15 +83,19 @@ export function useFavorites() {
     }
   }
 
-  function toggleStar() {
+  async function toggleStar() {
     if (!currentTitle.value || !currentLyrics.value) return
 
     const idx = favorites.value.findIndex(f => f.title === currentTitle.value)
 
     if (idx >= 0) {
+      // Unsave — delete from DB and local cache
+      const song = favorites.value[idx]
       favorites.value.splice(idx, 1)
+      if (song.id) apiDeleteSong(song.id)
     } else {
-      favorites.value.push({
+      // Save — create in DB and add to local cache
+      const newSong = {
         title: currentTitle.value,
         lyrics: currentLyrics.value,
         fontAdjust: fontAdjust.value,
@@ -97,20 +105,21 @@ export function useFavorites() {
         label: 'fresh',
         played: false,
         playCount: 0,
-      })
+      }
+      const created = await apiCreateSong(newSong)
+      if (created) favorites.value.push(created)
     }
 
-    saveToStorage()
     refreshSavedState()
   }
 
-  // Persist a single property change to favorites
+  // Persist a single property change — update local cache optimistically, then fire API
   function updateFavProp(prop, value) {
     if (!isSaved.value) return
     const fav = favorites.value.find(f => f.title === currentTitle.value)
     if (fav) {
       fav[prop] = value
-      saveToStorage()
+      if (fav.id) apiUpdateSong(fav.id, { [prop]: value })
     }
   }
 
@@ -135,7 +144,6 @@ export function useFavorites() {
   }
 
   return {
-    STORAGE_KEY,
     favorites,
     currentTitle,
     currentLyrics,
@@ -145,9 +153,7 @@ export function useFavorites() {
     songAltColors,
     isSaved,
     getFavorites,
-    saveFavoritesArray,
-    saveFavorites,
-    reload,
+    loadFavorites,
     refreshSavedState,
     refreshCurrentSong,
     toggleStar,

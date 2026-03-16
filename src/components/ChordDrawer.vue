@@ -201,7 +201,7 @@ function resetTranspose() {
 <style scoped>
 .chord-drawer {
   flex-shrink: 0;
-  background: #0d0d0d;
+  background: var(--bg-app);
   border-top: 1px solid var(--border);
   padding: 1rem 1.5rem 1.25rem;
   max-height: 35vh;

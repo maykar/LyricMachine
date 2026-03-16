@@ -22,7 +22,7 @@ defineEmits(['toggle'])
   cursor: pointer;
   font-size: 1.4rem;
   line-height: 1;
-  color: #e8e8e8;
+  color: var(--text-primary);
   opacity: 0.5;
   transition: opacity 0.2s, transform 0.2s;
   padding: 0;
