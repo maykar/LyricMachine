@@ -31,13 +31,24 @@ export function put(server, path, handler) { route(server, 'PUT', path, handler)
 export function del(server, path, handler) { route(server, 'DELETE', path, handler) }
 
 /** Parse JSON body from request (works with both Connect and Express) */
+const MAX_BODY = 10 * 1024 * 1024 // 10 MB — matches express.json({ limit: '10mb' })
+
 export function parseBody(req) {
   // If express.json() already parsed it
   if (req.body) return Promise.resolve(req.body)
   // Manual parse for Connect (Vite dev)
   return new Promise((resolve, reject) => {
     let data = ''
-    req.on('data', chunk => { data += chunk })
+    let size = 0
+    req.on('data', chunk => {
+      size += chunk.length
+      if (size > MAX_BODY) {
+        req.destroy()
+        reject(new Error('Request body too large'))
+        return
+      }
+      data += chunk
+    })
     req.on('end', () => {
       try { resolve(data ? JSON.parse(data) : {}) }
       catch { reject(new Error('Invalid JSON')) }
@@ -46,10 +57,15 @@ export function parseBody(req) {
   })
 }
 
-/** Send JSON response */
+/** Send JSON response (Connect + Express compatible) */
 export function json(res, data, status = 200) {
-  res.writeHead(status, { 'Content-Type': 'application/json' })
-  res.end(JSON.stringify(data))
+  // Prefer Express native json() when available (enables middleware hooks)
+  if (typeof res.status === 'function' && typeof res.json === 'function') {
+    res.status(status).json(data)
+  } else {
+    res.writeHead(status, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify(data))
+  }
 }
 
 /** Extract ID from URL path like /api/songs/42 */
@@ -109,8 +125,16 @@ export function setupAPI(server) {
 
   // ===== Songs CRUD =====
 
-  get(server, '/api/songs', (req, res) => {
-    json(res, db.getAllSongs())
+  get(server, '/api/songs', (req, res, next) => {
+    // Only match exact /api/songs, not /api/songs/42 (prefix matching)
+    if (req.url !== '/' && req.url !== '' && req.url !== '?') {
+      if (!req.url.startsWith('?')) return next()
+    }
+    try {
+      json(res, db.getAllSongs())
+    } catch (err) {
+      json(res, { error: err.message }, 500)
+    }
   })
 
   // POST /api/songs — create or upsert a song
@@ -142,7 +166,8 @@ export function setupAPI(server) {
     try {
       const body = await parseBody(req)
       if (!body.field) return json(res, { error: 'field required' }, 400)
-      db.bulkUpdateField(body.field, body.value)
+      const result = db.bulkUpdateField(body.field, body.value)
+      if (!result.ok) return json(res, { error: result.error }, 400)
       json(res, { ok: true })
     } catch (err) {
       json(res, { error: err.message }, 500)
@@ -161,12 +186,16 @@ export function setupAPI(server) {
 
   // GET /api/songs/:id — must be AFTER the named routes above
   get(server, '/api/songs/', (req, res) => {
-    // Matches /api/songs/42 — extract ID from the remainder
-    const id = extractId(req)
-    if (isNaN(id)) return json(res, { error: 'invalid id' }, 400)
-    const song = db.getSong(id)
-    if (!song) return json(res, { error: 'not found' }, 404)
-    json(res, song)
+    try {
+      // Matches /api/songs/42 — extract ID from the remainder
+      const id = extractId(req)
+      if (isNaN(id)) return json(res, { error: 'invalid id' }, 400)
+      const song = db.getSong(id)
+      if (!song) return json(res, { error: 'not found' }, 404)
+      json(res, song)
+    } catch (err) {
+      json(res, { error: err.message }, 500)
+    }
   })
 
   // PUT /api/songs/:id — update song fields
@@ -185,10 +214,14 @@ export function setupAPI(server) {
 
   // DELETE /api/songs/:id
   del(server, '/api/songs/', async (req, res) => {
-    const id = extractId(req)
-    if (isNaN(id)) return json(res, { error: 'invalid id' }, 400)
-    db.deleteSong(id)
-    json(res, { ok: true })
+    try {
+      const id = extractId(req)
+      if (isNaN(id)) return json(res, { error: 'invalid id' }, 400)
+      db.deleteSong(id)
+      json(res, { ok: true })
+    } catch (err) {
+      json(res, { error: err.message }, 500)
+    }
   })
 
   // ===== Settings =====

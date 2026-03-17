@@ -47,6 +47,7 @@
 <script setup>
 import { ref } from 'vue'
 import { useFavorites } from '../composables/useFavorites.js'
+import { api } from '../api.js'
 
 const emit = defineEmits(['close', 'select', 'updated'])
 
@@ -57,7 +58,7 @@ async function removeFavorite(index) {
   const fav = favorites.value[index]
   favorites.value.splice(index, 1)
   if (fav && fav.id) {
-    await fetch(`/api/songs/${fav.id}`, { method: 'DELETE' })
+    await api.deleteSong(fav.id)
   }
   emit('updated')
 }
@@ -82,15 +83,10 @@ async function importFavorites(e) {
     const imported = JSON.parse(text)
     if (!Array.isArray(imported)) throw new Error()
 
-    const res = await fetch('/api/import', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(imported),
-    })
-    if (res.ok) {
-      // Reload from DB
-      const songsRes = await fetch('/api/songs')
-      if (songsRes.ok) favorites.value = await songsRes.json()
+    const result = await api.importSongs(imported)
+    if (result) {
+      const songs = await api.getSongs()
+      if (songs) favorites.value = songs
       emit('updated')
     }
   } catch {

@@ -229,6 +229,7 @@ import {
 import { useFavorites } from '../composables/useFavorites.js'
 import { splitTitle } from '../utils/titleParser.js'
 import { LABEL_OPTIONS } from '../constants/labels.js'
+import { api } from '../api.js'
 
 // Storage keys removed — all persistence via server API
 const { favorites } = useFavorites()
@@ -310,11 +311,7 @@ function setLabelFromCtx(label) {
     const fav = favorites.value[ctxMenu.index]
     fav.label = label
     if (fav.id) {
-      fetch(`/api/songs/${fav.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ label }),
-      })
+      api.updateSong(fav.id, { label })
     }
     emit('updated')
   }
@@ -338,21 +335,11 @@ async function addToSourcePlaylist() {
   if (!fav?.spotifyTrackId) return
 
   try {
-    const res = await fetch('/api/spotify/playlists/add-to-source', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ trackId: fav.spotifyTrackId }),
-    })
-    const data = await res.json()
-    if (data.ok) {
+    const data = await api.addToSourcePlaylist(fav.spotifyTrackId)
+    if (data?.ok) {
       fav.notInPlaylist = false
-      // Update DB
       if (fav.id) {
-        fetch(`/api/songs/${fav.id}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ notInPlaylist: false }),
-        })
+        api.updateSong(fav.id, { notInPlaylist: false })
       }
       emit('updated')
     }
@@ -456,35 +443,20 @@ useEventListener(window, 'keydown', (e) => {
 }, { capture: true })
 
 watch(hidePlayed, v => {
-  fetch('/api/settings/filters', {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ hidePlayed: v, noChords: filterNoChords.value }),
-  })
+  api.setFilters({ hidePlayed: v, noChords: filterNoChords.value })
 })
 watch(filterNoChords, v => {
-  fetch('/api/settings/filters', {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ hidePlayed: hidePlayed.value, noChords: v }),
-  })
+  api.setFilters({ hidePlayed: hidePlayed.value, noChords: v })
 })
 async function onNewSong({ title, lyrics }) {
   // Add to favorites via API
   const existing = favorites.value.findIndex(f => f.title === title)
   if (existing < 0) {
-    try {
-      const res = await fetch('/api/songs', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title, lyrics }),
-      })
-      if (res.ok) {
-        const created = await res.json()
-        favorites.value.unshift(created)
-        emit('updated')
-      }
-    } catch {}
+    const created = await api.createSong({ title, lyrics })
+    if (created) {
+      favorites.value.unshift(created)
+      emit('updated')
+    }
   }
   emit('select', { title, lyrics })
   showNewSong.value = false
@@ -589,11 +561,7 @@ function onDrop(toIndex) {
   // Persist new order to DB
   const ids = favorites.value.map(f => f.id).filter(Boolean)
   if (ids.length) {
-    fetch('/api/songs/reorder', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ids }),
-    })
+    api.reorderSongs(ids)
   }
   emit('updated')
   dragOverIndex.value = -1
@@ -613,7 +581,7 @@ function removeFavorite(index) {
   const fav = favorites.value[index]
   favorites.value.splice(index, 1)
   if (fav && fav.id) {
-    fetch(`/api/songs/${fav.id}`, { method: 'DELETE' })
+    api.deleteSong(fav.id)
   }
   emit('updated')
   confirmDeleteIndex.value = -1
@@ -637,11 +605,7 @@ function incrementPlayed(index) {
     fav.playCount = (fav.playCount || 0) + 1
   }
   if (fav.id) {
-    fetch(`/api/songs/${fav.id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ played: fav.played, playCount: fav.playCount }),
-    })
+    api.updateSong(fav.id, { played: fav.played, playCount: fav.playCount })
   }
   emit('updated')
 }
@@ -650,11 +614,7 @@ async function resetAllPlayed() {
   for (const fav of favorites.value) {
     fav.played = false
   }
-  await fetch('/api/songs/bulk-update', {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ field: 'played', value: false }),
-  })
+  await api.bulkUpdate('played', false)
   emit('updated')
 }
 
@@ -679,15 +639,10 @@ async function importFavorites(e) {
     const imported = JSON.parse(text)
     if (!Array.isArray(imported)) throw new Error()
 
-    const res = await fetch('/api/import', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(imported),
-    })
-    if (res.ok) {
-      // Reload all songs from DB
-      const songsRes = await fetch('/api/songs')
-      if (songsRes.ok) favorites.value = await songsRes.json()
+    const result = await api.importSongs(imported)
+    if (result) {
+      const songs = await api.getSongs()
+      if (songs) favorites.value = songs
       emit('updated')
     }
   } catch {
@@ -739,19 +694,12 @@ async function toggleFavoriteResult(result) {
   if (idx >= 0) {
     const fav = favorites.value[idx]
     favorites.value.splice(idx, 1)
-    if (fav.id) fetch(`/api/songs/${fav.id}`, { method: 'DELETE' })
+    if (fav.id) api.deleteSong(fav.id)
   } else {
-    try {
-      const res = await fetch('/api/songs', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title, lyrics: result.plainLyrics }),
-      })
-      if (res.ok) {
-        const created = await res.json()
-        favorites.value.push(created)
-      }
-    } catch {}
+    const created = await api.createSong({ title, lyrics: result.plainLyrics })
+    if (created) {
+      favorites.value.push(created)
+    }
   }
   emit('updated')
 }
@@ -778,14 +726,11 @@ useEventListener(document, 'keydown', onLibraryKeydown)
 
 onMounted(async () => {
   // Load filter preferences from server
-  try {
-    const fRes = await fetch('/api/settings/filters')
-    if (fRes.ok) {
-      const filters = await fRes.json()
-      if (filters.hidePlayed !== undefined) hidePlayed.value = filters.hidePlayed
-      if (filters.noChords !== undefined) filterNoChords.value = filters.noChords
-    }
-  } catch {}
+  const filters = await api.getFilters()
+  if (filters) {
+    if (filters.hidePlayed !== undefined) hidePlayed.value = filters.hidePlayed
+    if (filters.noChords !== undefined) filterNoChords.value = filters.noChords
+  }
   inputRef.value?.focus()
 
   // Measure container to calculate how many rows fit

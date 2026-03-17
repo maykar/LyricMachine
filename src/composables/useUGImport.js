@@ -1,3 +1,5 @@
+import { api } from '../api.js'
+
 export function useUGImport(favorites, currentTitle, chordState) {
   let ugPollTimer = null
 
@@ -16,9 +18,8 @@ export function useUGImport(favorites, currentTitle, chordState) {
       }
 
       try {
-        const res = await fetch('/api/import-chords')
-        const data = await res.json()
-        if (data.empty) return
+        const data = await api.getImportChords()
+        if (!data || data.empty) return
 
         clearInterval(ugPollTimer)
         ugPollTimer = null
@@ -32,22 +33,15 @@ export function useUGImport(favorites, currentTitle, chordState) {
           if (currentTitle.value) {
             const fav = favorites.value.find(f => f.title === currentTitle.value)
             if (fav) {
-              fav.chordSections = data.sections
-              fav.chordStructure = data.structure || ''
               if (data.capo) fav.capo = data.capo
               fav.customChords = data.sections
               fav.customStructure = data.structure || ''
 
-              // Persist to DB
               if (fav.id) {
-                fetch(`/api/songs/${fav.id}`, {
-                  method: 'PUT',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                    customChords: data.sections,
-                    customStructure: data.structure || '',
-                    capo: data.capo || null,
-                  }),
+                api.updateSong(fav.id, {
+                  customChords: data.sections,
+                  customStructure: data.structure || '',
+                  capo: data.capo || null,
                 })
               }
             }

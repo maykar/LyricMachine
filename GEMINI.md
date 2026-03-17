@@ -23,24 +23,29 @@ LyricMachine helps musicians display song lyrics, chords, and Spotify playback d
 ├── index.html              # SPA entry point
 ├── server.js               # Production Express server
 ├── vite.config.js           # Vite config + API plugin (dev server binds 127.0.0.1)
+├── shared/
+│   └── normalize.js         # Title normalization (shared between client + server)
 ├── server/
-│   ├── api.js               # Route registry + .env loader + parseBody helper
-│   ├── db.js                # SQLite database (songs, settings tables)
+│   ├── api.js               # Route registry + .env loader + parseBody helper (10MB limit)
+│   ├── db.js                # SQLite database (songs, settings tables) — column-name assertion on writes
+│   ├── utils.js             # spotifyFetch with retry + throw-on-exhaustion, re-exports shared/normalize
 │   ├── spotify.js           # Spotify client-credentials search + playlist sync
 │   ├── spotifyAuth.js       # Spotify Authorization Code flow (login, callback, token refresh)
-│   ├── spotifyPlaylists.js  # Label-based playlist sync engine + add-to-source endpoint
+│   ├── spotifyPlaylists.js  # Label-based playlist sync engine + mutex guard + parallel lyrics fetch
 │   ├── chordParser.js       # HTML→chord parser (from UG pre.innerHTML)
 │   ├── ugImport.js          # Import/poll endpoints + bookmarklet page
 │   ├── bookmarklet.js       # Browser bookmarklet code
-│   └── popularArt.js        # Dashboard album art mosaic helper
+│   └── popularArt.js        # Dashboard album art mosaic helper (genres configurable via settings)
 ├── src/
 │   ├── App.vue              # Root component — wires all features together
+│   ├── api.js               # Centralized API client — wraps every server endpoint, errors → console + toast
 │   ├── main.js              # Vue app bootstrap
 │   ├── style.css            # Global styles
 │   ├── style-tokens.css     # Design tokens (colors, spacing, radii, etc.)
 │   ├── constants/
 │   │   └── labels.js        # Kanban label definitions (Fresh/Getting There/In Setlist)
 │   ├── utils/
+│   │   ├── normalize.js     # Re-exports shared/normalize.js
 │   │   └── titleParser.js   # Title normalization + "Artist — Track" splitting
 │   ├── components/
 │   │   ├── TopBar.vue       # Header: font controls, edit, search, played, label, star, page indicator (lyrics page only)
@@ -50,23 +55,25 @@ LyricMachine helps musicians display song lyrics, chords, and Spotify playback d
 │   │   ├── KanbanView.vue   # Kanban board modal for song categorization with drag-and-drop, confetti, party sound
 │   │   ├── SongRandomizer.vue# Slot-machine random song picker modal with carousel animation, celebrations
 │   │   ├── ChordDrawer.vue  # Collapsible chord chart footer with transpose, edit mode, capo display
-│   │   ├── SettingsDropdown.vue# Settings modal: defaults, Spotify connection, band name, source playlist picker, sync button
+│   │   ├── SettingsDropdown.vue# Settings modal: defaults, Spotify connection, band name, mosaic genres, source playlist, sync
 │   │   ├── SpotifyPlayer.vue# Embedded Spotify player via iframe
 │   │   ├── ContextMenu.vue  # Right-click context menu (label/played/delete/add-to-source)
 │   │   ├── NewSongForm.vue  # Manual song creation form (artist + track + lyrics)
 │   │   ├── SearchOverlay.vue# Quick single-result song search via lrclib
 │   │   ├── FavoritesOverlay.vue# Simple favorites list with export/import JSON and remove
+│   │   ├── ToastContainer.vue# Stacked toast notifications at bottom-right with slide-in animation
 │   │   ├── StarButton.vue   # Star/unsave toggle
 │   │   └── MdiIcon.vue      # SVG icon wrapper
 │   └── composables/
 │       ├── useNavigation.js # Unified navigation: 3 pages (dashboard/library/lyrics) + modal stack (settings/kanban/randomizer)
 │       ├── useKeyboard.js   # Global keyboard shortcuts — Escape calls dismissTop(), shortcuts blocked when modal open
-│       ├── useFavorites.js  # Favorites CRUD via server API, per-song settings, label management, play tracking
-│       ├── useSettings.js   # User defaults persistence, apply-to-all, clear-all-chords
+│       ├── useFavorites.js  # Singleton store: favorites CRUD via api.js, per-song settings, label management, play tracking
+│       ├── useSettings.js   # User defaults persistence via api.js, apply-to-all, clear-all-chords
 │       ├── useChords.js     # Chord fetching from saved data, Spotify track ID lookup + cache, chord editing + reset
 │       ├── useUGImport.js   # UG bookmarklet import polling (2s interval, 2min timeout)
 │       ├── usePlaylistSync.js# Spotify playlist sync with title normalization, lyrics auto-fetch from lrclib, album art backfill
-│       └── useSpotifyAuth.js# Client-side Spotify connection state (connected/user/status)
+│       ├── useSpotifyAuth.js# Client-side Spotify connection state (connected/user/status) via api.js
+│       └── useToast.js      # Singleton toast notifications — showToast(message, {type, duration}), auto-dismiss
 └── public/
     ├── SloshRat.png         # Mascot image
     ├── party.ogg            # Kanban celebration sound
@@ -146,6 +153,11 @@ All state lives in `useNavigation.js`. Keyboard shortcuts in `useKeyboard.js`.
 - **Auto-sync triggers** — label change (5s debounce), kanban close (immediate), app startup, kanban open (30s cooldown)
 - **Podcast filtering** — non-track items skipped during sync
 - **Embedded player** — iframe player with auto-lookup track ID, track ID caching
+
+### API Client Architecture
+- **Centralized client** (`src/api.js`) — wraps every server endpoint; no direct `fetch()` calls in components
+- **Error handling** — on failure: logs `console.error` AND shows a toast notification via `useToast`
+- **Toast notifications** — `ToastContainer.vue` renders stacked bottom-right notifications (error/success/info)
 
 ### Song Management
 - **Three labels** — Fresh (red), Getting There (yellow), In Setlist (green)

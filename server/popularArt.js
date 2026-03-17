@@ -1,19 +1,6 @@
 import { getSpotifyToken } from './spotify.js'
-
-/** Spotify-aware fetch with 429 retry-after handling */
-async function spotifyFetch(url, token, retries = 2) {
-  for (let i = 0; i <= retries; i++) {
-    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
-    if (res.status === 429) {
-      const wait = parseInt(res.headers.get('retry-after') || '2', 10)
-      console.warn(`Spotify 429 — waiting ${wait}s before retry ${i + 1}/${retries}`)
-      await new Promise(r => setTimeout(r, wait * 1000))
-      continue
-    }
-    return res
-  }
-  return { ok: false } // exhausted retries
-}
+import { spotifyFetch, pickAlbumArt } from './utils.js'
+import * as db from './db.js'
 
 // --- In-memory cache (24h TTL) ---
 let cachedArts = null
@@ -33,12 +20,13 @@ export async function handlePopularArt(req, res) {
     const seenKeys = new Set()
 
     // --- Phase 1: Albums from playlist artists ---
-    const playlistId = process.env.SPOTIFY_PLAYLIST_ID
+    const sourceSetting = db.getSetting('spotify_source_playlist')
+    const playlistId = sourceSetting?.value || sourceSetting || ''
     if (playlistId) {
       // Get artist IDs from the playlist
       const plRes = await spotifyFetch(
         `https://api.spotify.com/v1/playlists/${playlistId}/tracks?fields=items(track(artists(id,name),album(images))),next&limit=100`,
-        token
+        {}, { token }
       )
       if (plRes.ok) {
         const plData = await plRes.json()
@@ -48,7 +36,7 @@ export async function handlePopularArt(req, res) {
         for (const item of (plData.items || [])) {
           if (!item.track) continue
           // Track which album arts are already in the playlist
-          const img = item.track.album?.images?.[1]?.url || item.track.album?.images?.[0]?.url
+          const img = pickAlbumArt(item.track.album?.images)
           if (img) playlistArtKeys.add(img)
           // Collect unique artist IDs
           for (const a of (item.track.artists || [])) {
@@ -62,13 +50,12 @@ export async function handlePopularArt(req, res) {
           try {
             const albumRes = await spotifyFetch(
               `https://api.spotify.com/v1/artists/${artistId}/albums?include_groups=album&limit=10`,
-              token
+              {}, { token }
             )
             if (!albumRes.ok) continue
             const albumData = await albumRes.json()
             for (const album of (albumData.items || [])) {
-              const images = album.images || []
-              const art = images.length > 1 ? images[1].url : (images[0]?.url || null)
+              const art = pickAlbumArt(album.images)
               if (!art || !art.includes('/ab67616d')) continue
               if (playlistArtKeys.has(art) || seenKeys.has(art)) continue
               seenKeys.add(art)
@@ -82,11 +69,17 @@ export async function handlePopularArt(req, res) {
     console.log(`Popular art: ${arts.length} from playlist artists`)
 
     // --- Phase 2: Genre search fallback if still need more ---
+    const DEFAULT_GENRES = ['grunge', 'punk']
+    const genreSetting = db.getSetting('mosaic_genres')
+    const genres = (Array.isArray(genreSetting) && genreSetting.length > 0)
+      ? genreSetting
+      : DEFAULT_GENRES
+
     if (arts.length < 60) {
-      for (const genre of ['grunge', 'punk']) {
+      for (const genre of genres) {
         const searchRes = await spotifyFetch(
-          `https://api.spotify.com/v1/search?q=genre%3A${genre}&type=track&limit=50&offset=0`,
-          token
+          `https://api.spotify.com/v1/search?q=genre%3A${encodeURIComponent(genre)}&type=track&limit=50&offset=0`,
+          {}, { token }
         )
         if (!searchRes.ok) continue
         const data = await searchRes.json()
@@ -96,8 +89,7 @@ export async function handlePopularArt(req, res) {
           if (!artist || seenArtists.has(artist)) continue
           const albumType = t.album?.album_type
           if (albumType === 'compilation') continue
-          const images = t.album?.images || []
-          const art = images.length > 1 ? images[1].url : (images[0]?.url || null)
+          const art = pickAlbumArt(t.album?.images)
           if (!art || !art.includes('/ab67616d')) continue
           if (seenKeys.has(art)) continue
           seenArtists.add(artist)

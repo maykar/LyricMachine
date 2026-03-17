@@ -67,7 +67,26 @@ const result = db.prepare('SELECT * FROM songs WHERE id = ?').get(id)
 
 ## Important Notes
 - Route helpers work with both Vite middleware and production Express
-- Use `parseBody(req)` from `api.js` for POST body parsing
+- Use `parseBody(req)` from `api.js` for POST body parsing — enforces a 10MB size limit
 - Access query params via `new URL(req.url, 'http://x').searchParams`
 - Environment variables available via `process.env` after `loadEnv()` runs
 - Error handling: wrap in try/catch, use `json(res, { error: msg }, 500)` for errors
+- Column names in `db.js` are asserted via regex (`/^[a-z_]+$/`) to prevent SQL injection
+
+## Client-Side Wrapper
+
+After adding a server route, add a corresponding method to `src/api.js`:
+
+```js
+// In src/api.js — add to the api object:
+export const api = {
+  // ... existing methods
+  myEndpoint: () => get('/api/my-endpoint'),
+  createMyThing: (data) => post('/api/my-endpoint', data),
+}
+```
+
+All client-side code MUST use `api.*` methods instead of direct `fetch()` calls. The API client automatically:
+- Logs `console.error` on failure
+- Fires toast notifications via `useToast`
+- Returns parsed JSON or `null` on failure

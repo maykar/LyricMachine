@@ -1,25 +1,5 @@
 import * as db from './db.js'
-import { getUserToken } from './spotifyAuth.js'
-
-// Spotify API helper with 429 retry
-async function spotifyFetch(url, opts = {}) {
-  const token = await getUserToken()
-  if (!token) throw new Error('Spotify not connected')
-
-  const res = await fetch(url, {
-    ...opts,
-    headers: { Authorization: `Bearer ${token}`, ...opts.headers },
-  })
-
-  if (res.status === 429) {
-    const retryAfter = parseInt(res.headers.get('retry-after') || '2', 10)
-    console.warn(`Spotify 429 — retrying in ${retryAfter}s`)
-    await new Promise(r => setTimeout(r, retryAfter * 1000))
-    return spotifyFetch(url, opts)
-  }
-
-  return res
-}
+import { normalize, pickAlbumArt, spotifyFetch, fetchLrcLibLyrics } from './utils.js'
 
 // --- Route setup ---
 
@@ -99,44 +79,51 @@ export function setupSpotifyPlaylistRoutes(server, { get, post, json }) {
 
 // --- Sync engine ---
 
+let syncInFlight = false
+
 async function runFullSync() {
-  const user = db.getSetting('spotify_user')
-  if (!user) throw new Error('Spotify not connected')
-
-  const bandName = db.getSetting('band_name')?.value || db.getSetting('band_name') || ''
-  const labelSyncEnabled = db.getSetting('spotify_label_sync')
-  const sourcePlaylistId = db.getSetting('spotify_source_playlist')?.value || db.getSetting('spotify_source_playlist') || ''
-
-  const results = { sourceImported: 0, sourceMarkedRemoved: 0, labelsPushed: 0, labelsImported: 0 }
-
-  // --- 1. Source playlist sync ---
-  if (sourcePlaylistId) {
-    const syncResult = await syncSourcePlaylist(sourcePlaylistId)
-    results.sourceImported = syncResult.imported
-    results.sourceMarkedRemoved = syncResult.markedRemoved
+  // Mutex: prevent concurrent syncs from duplicating work
+  if (syncInFlight) {
+    console.log('Sync already in progress, skipping')
+    return { skipped: true }
   }
+  syncInFlight = true
 
-  // --- 2. Label playlist sync ---
-  if (labelSyncEnabled?.value ?? labelSyncEnabled) {
-    const labelResult = await syncLabelPlaylists(user.id, bandName)
-    results.labelsPushed = labelResult.pushed
-    results.labelsImported = labelResult.imported
+  try {
+    const user = db.getSetting('spotify_user')
+    if (!user) throw new Error('Spotify not connected')
+
+    const bandName = db.getSetting('band_name')?.value || db.getSetting('band_name') || ''
+    const labelSyncEnabled = db.getSetting('spotify_label_sync')
+    const sourcePlaylistId = db.getSetting('spotify_source_playlist')?.value || db.getSetting('spotify_source_playlist') || ''
+
+    const results = { sourceImported: 0, sourceMarkedRemoved: 0, labelsPushed: 0, labelsImported: 0 }
+
+    // --- 1. Source playlist sync ---
+    if (sourcePlaylistId) {
+      const syncResult = await syncSourcePlaylist(sourcePlaylistId)
+      results.sourceImported = syncResult.imported
+      results.sourceMarkedRemoved = syncResult.markedRemoved
+    }
+
+    // --- 2. Label playlist sync ---
+    if (labelSyncEnabled?.value ?? labelSyncEnabled) {
+      const labelResult = await syncLabelPlaylists(user.id, bandName)
+      results.labelsPushed = labelResult.pushed
+      results.labelsImported = labelResult.imported
+    }
+
+    console.log('Sync results:', results)
+    return results
+  } finally {
+    syncInFlight = false
   }
-
-  console.log('Sync results:', results)
-  return results
 }
 
 // --- Source playlist sync ---
 
 async function syncSourcePlaylist(playlistId) {
   const songs = db.getAllSongs()
-  const normalize = (s) => s.toLowerCase()
-    .replace(/[\u2018\u2019\u201C\u201D`\u00B4\u2032\u2033']/g, "'")
-    .replace(/[\u2014\u2013\u2012\u2015]/g, '-')
-    .replace(/[^a-z0-9\s]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim()
 
   // Fetch all tracks from source playlist
   const playlistTracks = await getPlaylistTracks(playlistId)
@@ -146,42 +133,38 @@ async function syncSourcePlaylist(playlistId) {
   let imported = 0
   let markedRemoved = 0
 
-  // Import new tracks
-  for (const track of playlistTracks) {
-    if (track.type !== 'track') continue // Skip podcasts/episodes
+  // Collect new tracks to import
+  const newTracks = playlistTracks.filter(track => {
+    if (track.type !== 'track') return false
     const title = `${track.artist} \u2014 ${track.name}`
-    if (existingNormalized.has(normalize(title))) continue
+    return !existingNormalized.has(normalize(title))
+  })
 
-    // Fetch lyrics from lrclib
-    let lyrics = ''
-    try {
-      const q = `${track.artist} ${track.name}`
-      const lrcRes = await fetch(`https://lrclib.net/api/search?q=${encodeURIComponent(q)}`)
-      if (lrcRes.ok) {
-        const lrcData = await lrcRes.json()
-        const exact = lrcData.find(r =>
-          r.plainLyrics &&
-          normalize(r.artistName) === normalize(track.artist) &&
-          normalize(r.trackName) === normalize(track.name)
-        )
-        const fallback = lrcData.find(r => r.plainLyrics)
-        lyrics = (exact || fallback)?.plainLyrics || ''
-      }
-    } catch {}
-
-    const defaults = db.getSetting('userDefaults') || {}
-    db.upsertSong({
-      title,
-      lyrics,
-      fontAdjust: 0,
-      merge: defaults.merge || false,
-      separators: defaults.separators || false,
-      altColors: defaults.altColors !== false,
-      spotifyTrackId: track.id || null,
-      albumArt: track.albumArt || null,
-    })
-    imported++
-    console.log(`Source sync: imported "${track.name}" ${lyrics ? '(with lyrics)' : '(no lyrics)'}`)
+  // Fetch lyrics in parallel batches of 5
+  const BATCH_SIZE = 5
+  const defaults = db.getSetting('userDefaults') || {}
+  for (let i = 0; i < newTracks.length; i += BATCH_SIZE) {
+    const batch = newTracks.slice(i, i + BATCH_SIZE)
+    const lyricsResults = await Promise.all(
+      batch.map(track => fetchLrcLibLyrics(track.artist, track.name))
+    )
+    for (let j = 0; j < batch.length; j++) {
+      const track = batch[j]
+      const lyrics = lyricsResults[j]
+      const title = `${track.artist} \u2014 ${track.name}`
+      db.upsertSong({
+        title,
+        lyrics,
+        fontAdjust: 0,
+        merge: defaults.merge || false,
+        separators: defaults.separators || false,
+        altColors: defaults.altColors !== false,
+        spotifyTrackId: track.id || null,
+        albumArt: track.albumArt || null,
+      })
+      imported++
+      console.log(`Source sync: imported "${track.name}" ${lyrics ? '(with lyrics)' : '(no lyrics)'}`)
+    }
   }
 
   // Mark songs no longer in source playlist
@@ -211,12 +194,6 @@ const LABEL_NAMES = {
 async function syncLabelPlaylists(userId, bandName) {
   const songs = db.getAllSongs()
   const mappings = db.getSetting('spotify_label_playlists') || {}
-  const normalize = (s) => s.toLowerCase()
-    .replace(/[\u2018\u2019\u201C\u201D`\u00B4\u2032\u2033']/g, "'")
-    .replace(/[\u2014\u2013\u2012\u2015]/g, '-')
-    .replace(/[^a-z0-9\s]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim()
 
   let pushed = 0
   let imported = 0
@@ -283,16 +260,7 @@ async function syncLabelPlaylists(userId, bandName) {
       }
 
       // New song — import
-      let lyrics = ''
-      try {
-        const q = `${track.artist} ${track.name}`
-        const lrcRes = await fetch(`https://lrclib.net/api/search?q=${encodeURIComponent(q)}`)
-        if (lrcRes.ok) {
-          const lrcData = await lrcRes.json()
-          const fallback = lrcData.find(r => r.plainLyrics)
-          lyrics = fallback?.plainLyrics || ''
-        }
-      } catch {}
+      const lyrics = await fetchLrcLibLyrics(track.artist, track.name)
 
       const defaults = db.getSetting('userDefaults') || {}
       db.upsertSong({
@@ -327,8 +295,7 @@ async function getPlaylistTracks(playlistId) {
     for (const item of (data.items || [])) {
       if (!item.track) continue
       const artist = item.track.artists?.map(a => a.name).join(', ') || 'Unknown'
-      const images = item.track.album?.images || []
-      const albumArt = images.length > 1 ? images[1].url : (images[0]?.url || null)
+      const albumArt = pickAlbumArt(item.track.album?.images)
       tracks.push({
         id: item.track.id,
         name: item.track.name,

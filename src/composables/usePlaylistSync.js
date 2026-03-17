@@ -1,17 +1,12 @@
+import { normalize } from '../utils/normalize.js'
+import { api } from '../api.js'
+
 export function usePlaylistSync(favorites, userDefaults) {
-  // Normalize title for comparison
-  const normalize = (s) => s.toLowerCase()
-    .replace(/[\u2018\u2019\u201C\u201D`\u00B4\u2032\u2033']/g, "'")
-    .replace(/[\u2014\u2013\u2012\u2015]/g, '-')
-    .replace(/[^a-z0-9\s]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim()
 
   async function syncPlaylist() {
     try {
-      const res = await fetch('/api/playlist-tracks')
-      const data = await res.json()
-      if (!data.tracks || !data.tracks.length) return
+      const data = await api.getPlaylistTracks()
+      if (!data?.tracks?.length) return
 
       const favs = favorites.value
       const existingNormalized = new Set(favs.map(f => normalize(f.title)))
@@ -40,7 +35,6 @@ export function usePlaylistSync(favorites, userDefaults) {
           console.warn(`Lyrics fetch failed for "${t.title}":`, e.message)
         }
 
-        // Create in DB via API
         const newSong = {
           title: t.title,
           lyrics,
@@ -52,18 +46,11 @@ export function usePlaylistSync(favorites, userDefaults) {
           albumArt: t.albumArt || null,
         }
 
-        try {
-          const createRes = await fetch('/api/songs', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(newSong),
-          })
-          if (createRes.ok) {
-            const created = await createRes.json()
-            favs.push(created)
-            existingNormalized.add(normalize(t.title))
-          }
-        } catch {}
+        const created = await api.createSong(newSong)
+        if (created) {
+          favs.push(created)
+          existingNormalized.add(normalize(t.title))
+        }
 
         console.log(`Playlist sync: added "${t.track}" ${lyrics ? '(with lyrics)' : '(no lyrics found)'}`)
       }
@@ -94,16 +81,11 @@ export function usePlaylistSync(favorites, userDefaults) {
           if (data.albumArt) fav.albumArt = data.albumArt
           if (data.spotifyTrackId && !fav.spotifyTrackId) fav.spotifyTrackId = data.spotifyTrackId
 
-          // Persist to DB
           if (fav.id) {
             const update = {}
             if (data.albumArt) update.albumArt = data.albumArt
             if (data.spotifyTrackId) update.spotifyTrackId = data.spotifyTrackId
-            fetch(`/api/songs/${fav.id}`, {
-              method: 'PUT',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(update),
-            })
+            api.updateSong(fav.id, update)
           }
           saved++
         } catch {}

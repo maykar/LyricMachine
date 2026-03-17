@@ -24,24 +24,31 @@ Use module-level state when the composable manages **app-wide singleton state**.
 
 ```js
 import { ref, computed } from 'vue'
+import { api } from '../api.js'
 
 export function use<Name>(/* dependencies */) {
   const myState = ref(null)
 
   function doSomething() {
-    // ...
+    // Use api.* instead of direct fetch() calls
+    const data = await api.myEndpoint()
   }
 
   return { myState, doSomething }
 }
 ```
 
+## API Access
+
+All server calls MUST go through `src/api.js` — never use `fetch()` directly. The API client handles error logging and toast notifications automatically.
+
 ## Existing composables for reference
 - `useNavigation.js` — unified navigation: 3 pages (dashboard/library/lyrics) + modal stack (settings/kanban/randomizer)
 - `useKeyboard.js` — global keyboard shortcuts, Escape calls `dismissTop()`
-- `useFavorites.js` — favorites CRUD via server API, current song state
-- `useSettings.js` — user defaults management
+- `useFavorites.js` — singleton store: favorites CRUD via api.js, current song state
+- `useSettings.js` — user defaults management via api.js
 - `useChords.js` — chord data fetching and caching
 - `useUGImport.js` — bookmarklet import polling
 - `usePlaylistSync.js` — Spotify playlist sync + album art backfill
-- `useSpotifyAuth.js` — client-side Spotify connection state (connected/user/status)
+- `useSpotifyAuth.js` — client-side Spotify connection state (connected/user/status) via api.js
+- `useToast.js` — singleton toast notifications (showToast, dismissToast)

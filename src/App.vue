@@ -79,8 +79,9 @@
         @open-kanban="openKanban"
       />
 
+      <!-- Dashboard stays permanently mounted so images don't re-download -->
       <Dashboard
-        v-else
+        v-show="page === 'dashboard'"
         :favorites="favorites"
         @select="onSongSelect"
         @open-kanban="openKanban"
@@ -131,6 +132,8 @@
       @update="onKanbanUpdate"
       @close="onKanbanClose"
     />
+
+    <ToastContainer />
   </div>
 </template>
 
@@ -145,6 +148,9 @@ import SpotifyPlayer from './components/SpotifyPlayer.vue'
 import SongRandomizer from './components/SongRandomizer.vue'
 import KanbanView from './components/KanbanView.vue'
 import Dashboard from './components/Dashboard.vue'
+import ToastContainer from './components/ToastContainer.vue'
+
+import { api } from './api.js'
 
 import { useFavorites } from './composables/useFavorites.js'
 import { useSettings } from './composables/useSettings.js'
@@ -210,7 +216,7 @@ async function flushLabelSync() {
   if (!labelsDirty || !spotifyConnected.value) return
   labelsDirty = false
   try {
-    await fetch('/api/spotify/playlists/sync', { method: 'POST' })
+    await api.syncSpotify()
     lastSyncAt = Date.now()
     console.log('Label playlist sync complete')
   } catch (err) {
@@ -240,7 +246,7 @@ async function openKanban() {
   // Rate-limited pull from Spotify before showing the board
   if (spotifyConnected.value && Date.now() - lastSyncAt > SYNC_COOLDOWN) {
     try {
-      await fetch('/api/spotify/playlists/sync', { method: 'POST' })
+      await api.syncSpotify()
       lastSyncAt = Date.now()
       await loadFavorites()
     } catch {}
@@ -333,11 +339,7 @@ function exitEditMode() {
     if (fav) {
       fav.lyrics = editLyricsText.value
       if (fav.id) {
-        fetch(`/api/songs/${fav.id}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ lyrics: editLyricsText.value }),
-        })
+        api.updateSong(fav.id, { lyrics: editLyricsText.value })
       }
     }
   }
@@ -360,11 +362,7 @@ async function clearAllPlayed() {
   for (const fav of favorites.value) {
     fav.played = false
   }
-  await fetch('/api/songs/bulk-update', {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ field: 'played', value: false }),
-  })
+  await api.bulkUpdate('played', false)
 }
 
 // --- Footer animation ---
@@ -449,18 +447,21 @@ onMounted(async () => {
   await loadFavorites()
   loadUserDefaults()
 
-  syncPlaylist().then(() => {
-    backfillAlbumArt()
-  })
+  // Check Spotify connection first to decide sync strategy
+  await checkSpotifyStatus()
 
-  // Auto-sync label playlists on startup (pull changes from Spotify)
-  checkSpotifyStatus().then(() => {
-    if (spotifyConnected.value) {
-      fetch('/api/spotify/playlists/sync', { method: 'POST' })
-        .then(() => loadFavorites())
-        .catch(() => {})
-    }
-  })
+  if (spotifyConnected.value) {
+    // Server-side sync handles everything: source + labels + not-in-playlist tracking
+    try {
+      await api.syncSpotify()
+      await loadFavorites()
+    } catch {}
+  } else {
+    // Fall back to client-side sync (uses client credentials, no user auth needed)
+    await syncPlaylist()
+  }
+
+  backfillAlbumArt()
 })
 
 onUnmounted(() => {
@@ -468,3 +469,44 @@ onUnmounted(() => {
   stopUGImportPoll()
 })
 </script>
+
+<style>
+.app-root {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.lyrics-container {
+  flex: 1;
+  min-height: 30vh;
+  overflow: hidden;
+  position: relative;
+}
+
+.lyrics-editor {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  height: 100%;
+  background: var(--bg-app);
+  color: var(--text-primary);
+  border: none;
+  padding: 1.5rem 2rem;
+  font-family: 'Inter', sans-serif;
+  font-size: 0.95rem;
+  line-height: 1.7;
+  resize: none;
+  outline: none;
+  overflow-y: auto;
+  box-sizing: border-box;
+}
+
+.lyrics-editor::placeholder {
+  color: rgba(255, 255, 255, 0.2);
+}
+</style>

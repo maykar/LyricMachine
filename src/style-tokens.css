@@ -67,17 +67,6 @@
    UTILITY CLASSES
    ===================== */
 
-/* Full-screen dimmed backdrop */
-.overlay-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 1000;
-  background: rgba(0, 0, 0, 0.7);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
 /* Elevated modal / panel container */
 .modal-panel {
   background: var(--bg-elevated);

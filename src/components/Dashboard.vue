@@ -1,5 +1,10 @@
 <template>
   <div class="dashboard">
+    <!-- Hidden rick roll reset (inline styles beat scoped specificity) -->
+    <div
+      style="position:fixed !important;top:0;left:0;width:40px;height:40px;z-index:100 !important;cursor:pointer"
+      @click="localStorage.removeItem('lyricmachine_rr')"
+    ></div>
     <!-- Album art mosaic background -->
     <div v-if="mosaicArts.length" class="mosaic-wrap">
       <div ref="gridRef" class="mosaic-grid" :class="{ 'mosaic-ready': mosaicReady }" :style="{ '--cols': mosaicCols * 2 }">
@@ -104,6 +109,7 @@ import MdiIcon from './MdiIcon.vue'
 import { mdiMagnify, mdiCog } from '@mdi/js'
 
 import { splitTitle } from '../utils/titleParser.js'
+import { api } from '../api.js'
 
 const props = defineProps({
   favorites: { type: Array, default: () => [] },
@@ -173,7 +179,14 @@ const albumArts = computed(() => {
 })
 
 const MIN_MOSAIC_ARTS = 50
+
+// Module-level: survives component unmount/remount across navigations
 const placeholderArts = ref([])
+let placeholdersFetched = false
+
+// Track which image URLs have already been preloaded by the browser.
+// Album art URLs are stable — no need to re-verify them.
+const preloadedUrls = new Set()
 
 // Blend user arts + popular rock placeholders to fill the mosaic
 const mosaicArts = computed(() => {
@@ -238,20 +251,29 @@ const mosaicReady = ref(false)
 
 watch(mosaicTiles, (tiles) => {
   if (!tiles.length) { mosaicReady.value = false; return }
-  mosaicReady.value = false
+  // Only preload URLs we haven't seen before
   const unique = [...new Set(tiles)]
-  Promise.all(unique.map(src => new Promise(resolve => {
+  const needsPreload = unique.filter(src => !preloadedUrls.has(src))
+
+  if (needsPreload.length === 0) {
+    // All images already cached — show immediately
+    mosaicReady.value = true
+    nextTick(() => {
+      if (gridRef.value && !animId) animId = requestAnimationFrame(animate)
+    })
+    return
+  }
+
+  mosaicReady.value = false
+  Promise.all(needsPreload.map(src => new Promise(resolve => {
     const img = new Image()
-    img.onload = resolve
-    img.onerror = resolve // don't block on broken images
+    img.onload = () => { preloadedUrls.add(src); resolve() }
+    img.onerror = () => { preloadedUrls.add(src); resolve() } // don't block on broken
     img.src = src
   }))).then(() => {
     mosaicReady.value = true
-    // Start scrolling once images are visible
     nextTick(() => {
-      if (gridRef.value && !animId) {
-        animId = requestAnimationFrame(animate)
-      }
+      if (gridRef.value && !animId) animId = requestAnimationFrame(animate)
     })
   })
 }, { immediate: true })
@@ -280,11 +302,13 @@ function animate() {
 }
 
 onMounted(() => {
-  // Fetch popular rock album art for mosaic placeholders
-  fetch('/api/popular-art')
-    .then(r => r.ok ? r.json() : { arts: [] })
-    .then(data => { placeholderArts.value = data.arts || [] })
-    .catch(() => {})
+  // Fetch popular rock album art for mosaic placeholders (once per session)
+  if (!placeholdersFetched) {
+    placeholdersFetched = true
+    api.getPopularArt()
+      .then(data => { placeholderArts.value = data?.arts || [] })
+      .catch(() => { placeholdersFetched = false }) // retry on failure
+  }
 })
 
 onUnmounted(() => {
@@ -301,7 +325,6 @@ onUnmounted(() => {
   padding: 2rem 3rem;
   gap: 1.5rem;
   overflow-y: auto;
-  animation: dashFadeIn 0.4s ease;
   position: relative;
 }
 

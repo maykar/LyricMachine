@@ -58,6 +58,19 @@
             />
           </label>
 
+          <!-- Mosaic genres -->
+          <label class="setting-row setting-row--input">
+            <span>Mosaic genres</span>
+            <input
+              type="text"
+              class="settings-text-input"
+              v-model="mosaicGenresInput"
+              placeholder="grunge, punk"
+              @blur="saveMosaicGenres"
+              @keydown.enter="$event.target.blur()"
+            />
+          </label>
+
           <!-- Spotify connection -->
           <div v-if="spotifyConnected" class="spotify-status">
             <div class="spotify-connected">
@@ -115,6 +128,7 @@
 import { ref, onMounted } from 'vue'
 import MdiIcon from './MdiIcon.vue'
 import { mdiClose, mdiSpotify } from '@mdi/js'
+import { api } from '../api.js'
 
 const props = defineProps({
   defaults: { type: Object, required: true },
@@ -136,6 +150,9 @@ let confirmTimer = null
 
 // Band name
 const bandNameInput = ref('')
+
+// Mosaic genres
+const mosaicGenresInput = ref('')
 
 // Spotify
 const userPlaylists = ref([])
@@ -167,22 +184,27 @@ function openBookmarklet() {
 
 // --- Band name ---
 async function loadBandName() {
-  try {
-    const res = await fetch('/api/settings/band_name')
-    const data = await res.json()
-    if (typeof data === 'string') bandNameInput.value = data
-    else if (data?.value) bandNameInput.value = data.value
-  } catch {}
+  const data = await api.getSetting('band_name')
+  if (typeof data === 'string') bandNameInput.value = data
+  else if (data?.value) bandNameInput.value = data.value
 }
 
 async function saveBandName() {
-  try {
-    await fetch('/api/settings/band_name', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ value: bandNameInput.value }),
-    })
-  } catch {}
+  await api.setSetting('band_name', bandNameInput.value)
+}
+
+// --- Mosaic genres ---
+async function loadMosaicGenres() {
+  const data = await api.getSetting('mosaic_genres')
+  if (Array.isArray(data)) mosaicGenresInput.value = data.join(', ')
+}
+
+async function saveMosaicGenres() {
+  const genres = mosaicGenresInput.value
+    .split(',')
+    .map(g => g.trim().toLowerCase())
+    .filter(Boolean)
+  await api.setSettingRaw('mosaic_genres', genres)
 }
 
 // --- Spotify ---
@@ -196,58 +218,36 @@ function onDisconnect() {
 
 async function loadUserPlaylists() {
   if (!props.spotifyConnected) return
-  try {
-    const res = await fetch('/api/spotify/playlists')
-    const data = await res.json()
-    userPlaylists.value = data.playlists || []
-  } catch {}
+  const data = await api.getSpotifyPlaylists()
+  if (data) userPlaylists.value = data.playlists || []
 }
 
 async function loadSourcePlaylist() {
-  try {
-    const res = await fetch('/api/settings/spotify_source_playlist')
-    const data = await res.json()
-    if (typeof data === 'string') selectedPlaylist.value = data
-    else if (data?.value) selectedPlaylist.value = data.value
-    else selectedPlaylist.value = ''
-  } catch {}
+  const data = await api.getSetting('spotify_source_playlist')
+  if (typeof data === 'string') selectedPlaylist.value = data
+  else if (data?.value) selectedPlaylist.value = data.value
+  else selectedPlaylist.value = ''
 }
 
 async function saveSourcePlaylist() {
-  try {
-    await fetch('/api/settings/spotify_source_playlist', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ value: selectedPlaylist.value }),
-    })
-  } catch {}
+  await api.setSetting('spotify_source_playlist', selectedPlaylist.value)
 }
 
 async function loadLabelSync() {
-  try {
-    const res = await fetch('/api/settings/spotify_label_sync')
-    const data = await res.json()
-    labelSyncEnabled.value = !!(data?.value ?? data)
-  } catch {}
+  const data = await api.getSetting('spotify_label_sync')
+  labelSyncEnabled.value = !!(data?.value ?? data)
 }
 
 async function saveLabelSync() {
-  try {
-    await fetch('/api/settings/spotify_label_sync', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ value: labelSyncEnabled.value }),
-    })
-  } catch {}
+  await api.setSetting('spotify_label_sync', labelSyncEnabled.value)
 }
 
 async function triggerSync() {
   syncing.value = true
   syncStatus.value = ''
   try {
-    const res = await fetch('/api/spotify/playlists/sync', { method: 'POST' })
-    const data = await res.json()
-    syncStatus.value = data.error ? `Error: ${data.error}` : 'Sync complete!'
+    const data = await api.syncSpotify()
+    syncStatus.value = data?.error ? `Error: ${data.error}` : 'Sync complete!'
     emit('trigger-sync')
   } catch (err) {
     syncStatus.value = 'Sync failed'
@@ -259,6 +259,7 @@ async function triggerSync() {
 
 onMounted(async () => {
   loadBandName()
+  loadMosaicGenres()
   loadLabelSync()
   if (props.spotifyConnected) {
     loadUserPlaylists()

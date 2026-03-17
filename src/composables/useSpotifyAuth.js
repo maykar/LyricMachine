@@ -1,16 +1,16 @@
-import { ref, onMounted } from 'vue'
+import { ref } from 'vue'
+import { api } from '../api.js'
 
 export function useSpotifyAuth() {
   const spotifyConnected = ref(false)
   const spotifyUser = ref('')
 
   async function checkSpotifyStatus() {
-    try {
-      const res = await fetch('/api/spotify/status')
-      const data = await res.json()
+    const data = await api.getSpotifyStatus()
+    if (data) {
       spotifyConnected.value = data.connected
       spotifyUser.value = data.displayName || ''
-    } catch {
+    } else {
       spotifyConnected.value = false
       spotifyUser.value = ''
     }
@@ -21,14 +21,10 @@ export function useSpotifyAuth() {
   }
 
   async function disconnectSpotify() {
-    try {
-      await fetch('/api/spotify/disconnect', { method: 'POST' })
-    } catch {}
+    await api.disconnectSpotify()
     spotifyConnected.value = false
     spotifyUser.value = ''
   }
-
-  onMounted(() => checkSpotifyStatus())
 
   return {
     spotifyConnected,

@@ -1,56 +1,47 @@
 import { ref, computed } from 'vue'
+import { api } from '../api.js'
 
-// --- Module-level singleton: one reactive array shared by all consumers ---
+// --- Module-level singleton: shared reactive state across all consumers ---
 const favorites = ref([])
-let loaded = false
+const currentTitle = ref('')
+const currentLyrics = ref('')
+const fontAdjust = ref(0)
+const songMerge = ref(false)
+const songSeparators = ref(false)
+const songAltColors = ref(true)
+const isSaved = ref(false)
+const currentLabel = ref(null)
+const currentPlayed = ref(false)
+const currentPlayCount = ref(0)
 
 /** Fetch all songs from the server and populate the reactive cache */
 async function loadFavorites() {
-  try {
-    const res = await fetch('/api/songs')
-    if (res.ok) favorites.value = await res.json()
-    loaded = true
-  } catch (err) {
-    console.error('Failed to load favorites:', err.message)
-  }
+  const songs = await api.getSongs()
+  if (songs) favorites.value = songs
 }
 
 /** POST a new song or update existing by title */
 async function apiCreateSong(song) {
-  const res = await fetch('/api/songs', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(song),
-  })
-  return res.ok ? await res.json() : null
+  return api.createSong(song)
 }
 
 /** PUT partial update to a song by ID */
 async function apiUpdateSong(id, fields) {
-  const res = await fetch(`/api/songs/${id}`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(fields),
-  })
-  return res.ok ? await res.json() : null
+  return api.updateSong(id, fields)
 }
 
 /** DELETE a song by ID */
 async function apiDeleteSong(id) {
-  await fetch(`/api/songs/${id}`, { method: 'DELETE' })
+  await api.deleteSong(id)
 }
 
+/**
+ * Provides favorites management.
+ *
+ * SINGLETON: All state (favorites, currentTitle, isSaved, etc.) is shared
+ * module-level — every consumer sees the same values.
+ */
 export function useFavorites() {
-  const currentTitle = ref('')
-  const currentLyrics = ref('')
-  const fontAdjust = ref(0)
-  const songMerge = ref(false)
-  const songSeparators = ref(false)
-  const songAltColors = ref(true)
-  const isSaved = ref(false)
-  const currentLabel = ref(null)
-  const currentPlayed = ref(false)
-  const currentPlayCount = ref(0)
 
   /** Return the shared reactive array's raw value (for APIs that need a plain array) */
   function getFavorites() {
@@ -113,13 +104,23 @@ export function useFavorites() {
     refreshSavedState()
   }
 
-  // Persist a single property change — update local cache optimistically, then fire API
+  /**
+   * Persist a single property change — update local cache optimistically, then fire API.
+   *
+   * INTENTIONAL: We do NOT rollback the local state on API failure.
+   * This is a personal local-network tool where connectivity is reliable
+   * and the UX cost of a stale-on-failure state (until next reload) is
+   * much lower than the jank of reverting values visually. Failures are
+   * still logged to console for debugging.
+   */
   function updateFavProp(prop, value) {
     if (!isSaved.value) return
     const fav = favorites.value.find(f => f.title === currentTitle.value)
     if (fav) {
       fav[prop] = value
-      if (fav.id) apiUpdateSong(fav.id, { [prop]: value })
+      if (fav.id) apiUpdateSong(fav.id, { [prop]: value }).catch(err =>
+        console.warn(`Failed to persist ${prop}:`, err.message)
+      )
     }
   }
 
@@ -176,10 +177,6 @@ export function useFavorites() {
         currentPlayCount.value = (currentPlayCount.value || 0) + 1
         updateFavProp('playCount', currentPlayCount.value)
       }
-    },
-    setPlayedCount(count) {
-      currentPlayCount.value = count
-      updateFavProp('playCount', count)
     },
   }
 }

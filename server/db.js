@@ -183,6 +183,8 @@ export function updateSong(id, fields) {
   for (const [clientKey, value] of Object.entries(fields)) {
     const col = FIELD_MAP[clientKey]
     if (!col || clientKey === 'id') continue
+    // Safety: assert column name is purely alphanumeric+underscore
+    if (!/^[a-z_]+$/.test(col)) throw new Error(`Invalid column name: ${col}`)
 
     setClauses.push(`${col} = ?`)
 
@@ -210,16 +212,26 @@ export function deleteSong(id) {
 
 export function reorderSongs(songIds) {
   const update = db.prepare('UPDATE songs SET sort_order = ? WHERE id = ?')
-  for (let i = 0; i < songIds.length; i++) {
-    update.run(i, songIds[i])
+  db.exec('BEGIN')
+  try {
+    for (let i = 0; i < songIds.length; i++) {
+      update.run(i, songIds[i])
+    }
+    db.exec('COMMIT')
+  } catch (err) {
+    db.exec('ROLLBACK')
+    throw err
   }
 }
 
 export function bulkUpdateField(field, value) {
   const col = FIELD_MAP[field]
-  if (!col) return
+  if (!col) return { ok: false, error: `Unknown field: ${field}` }
+  // Safety: assert column name is purely alphanumeric+underscore
+  if (!/^[a-z_]+$/.test(col)) throw new Error(`Invalid column name: ${col}`)
   const dbVal = BOOL_FIELDS.has(col) ? (value ? 1 : 0) : value
   db.prepare(`UPDATE songs SET ${col} = ?, updated_at = datetime('now') WHERE 1=1`).run(dbVal)
+  return { ok: true }
 }
 
 export function clearAllChords() {

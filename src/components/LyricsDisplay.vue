@@ -11,10 +11,10 @@
         class="lyrics-col"
       >
         <div
-          v-for="(line, li) in col"
+          v-for="(line, li) in col.lines"
           :key="li"
           class="lyric-line"
-          :class="{ alt: showAltColors && isAltLine(col, li), empty: showSeparators && !line.trim() }"
+          :class="{ alt: showAltColors && col.altSet.has(li), empty: showSeparators && !line.trim() }"
         >{{ line }}</div>
       </div>
     </div>
@@ -63,20 +63,13 @@ const fontCache = new Map()
 function getCacheKey(lyrics, merge) {
   const wrapper = wrapperRef.value
   if (!wrapper) return null
-  return `${lyrics.length}:${wrapper.clientWidth}x${wrapper.clientHeight}:${merge ? 1 : 0}`
+  // djb2 hash of lyrics content — avoids false cache hits for same-length different content
+  let h = 5381
+  for (let i = 0; i < lyrics.length; i++) h = ((h << 5) + h + lyrics.charCodeAt(i)) >>> 0
+  return `${h}:${wrapper.clientWidth}x${wrapper.clientHeight}:${merge ? 1 : 0}`
 }
 
-// Count only non-empty lines for alternating colors (skip blank separators)
-function isAltLine(col, index) {
-  if (!col[index]?.trim()) return false
-  let count = 0
-  for (let i = 0; i < index; i++) {
-    if (col[i]?.trim()) count++
-  }
-  return count % 2 === 1
-}
-
-// Build columns for the current page
+// Build columns + precomputed alt-line Sets for the current page
 const visibleColumns = computed(() => {
   const cols = columnCount.value
   const perPage = linesPerPage.value
@@ -87,7 +80,17 @@ const visibleColumns = computed(() => {
 
   const result = []
   for (let c = 0; c < cols; c++) {
-    result.push(pageLines.slice(c * perCol, (c + 1) * perCol))
+    const colLines = pageLines.slice(c * perCol, (c + 1) * perCol)
+    // Precompute which line indices are "alt" (every other non-empty line)
+    const altSet = new Set()
+    let count = 0
+    for (let i = 0; i < colLines.length; i++) {
+      if (colLines[i]?.trim()) {
+        if (count % 2 === 1) altSet.add(i)
+        count++
+      }
+    }
+    result.push({ lines: colLines, altSet })
   }
   return result
 })

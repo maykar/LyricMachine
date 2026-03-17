@@ -1,4 +1,4 @@
-
+import { pickAlbumArt } from './utils.js'
 
 // --- Spotify token cache ---
 let spotifyToken = null
@@ -48,9 +48,7 @@ export async function handleSpotifyIdRequest(req, res) {
 
     res.writeHead(200, { 'Content-Type': 'application/json' })
     const firstTrack = tracks[0]
-    const images = firstTrack?.album?.images || []
-    // Pick medium image (300px) for good quality without excess bandwidth
-    const albumArt = images.length > 1 ? images[1].url : (images[0]?.url || null)
+    const albumArt = pickAlbumArt(firstTrack?.album?.images)
     res.end(JSON.stringify({
       spotifyTrackId: firstTrack?.id || null,
       albumArt,
@@ -95,8 +93,7 @@ export async function handlePlaylistTracks(req, res) {
         if (!item.track) continue
         const artist = item.track.artists?.map(a => a.name).join(', ') || 'Unknown'
         const track = item.track.name || 'Unknown'
-        const images = item.track.album?.images || []
-        const albumArt = images.length > 1 ? images[1].url : (images[0]?.url || null)
+        const albumArt = pickAlbumArt(item.track.album?.images)
         tracks.push({ title: `${artist} \u2014 ${track}`, artist, track, spotifyTrackId: item.track.id, albumArt })
       }
       url = data.next || null

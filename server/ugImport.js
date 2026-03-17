@@ -4,6 +4,7 @@ import { parseChordHTML } from './chordParser.js'
 import { parseBody } from './api.js'
 
 let pendingImport = null
+const IMPORT_EXPIRY_MS = 120000 // 2 minutes
 
 export function setupUGImportRoutes(server) {
   /* POST /api/import-raw — bookmarklet sends raw pre.innerHTML, server parses */
@@ -37,11 +38,18 @@ export function setupUGImportRoutes(server) {
     }
   })
 
-  /* GET /api/import-chords — app polls for pending import */
+  /* GET /api/import-chords — app polls for pending import
+     NOTE: Single-user design — only one pending import at a time.
+     If multiple tabs poll, only the first gets the data. */
   server.use('/api/import-chords', (req, res, next) => {
     if (req.method !== 'GET') return next()
-    const data = pendingImport
-    pendingImport = null
+    let data = pendingImport
+    // Expire stale imports (older than 2 minutes)
+    if (data && Date.now() - data.timestamp > IMPORT_EXPIRY_MS) {
+      pendingImport = null
+      data = null
+    }
+    pendingImport = null // consume
     res.writeHead(200, { 'Content-Type': 'application/json' })
     res.end(JSON.stringify(data || { empty: true }))
   })
