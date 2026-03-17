@@ -37,7 +37,6 @@ defineExpose({ pause })
 .spotify-player {
   flex-shrink: 0;
   background: var(--bg-app);
-  border-top: 1px solid var(--border);
   height: 0;
   overflow: hidden;
   transition: height 0.3s ease;
@@ -45,6 +44,7 @@ defineExpose({ pause })
 
 .spotify-player.open {
   height: 105px;
+  border-top: 1px solid var(--border);
 }
 
 .spotify-embed {

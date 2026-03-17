@@ -17,9 +17,14 @@
       <div class="mosaic-tiltblur ts-bottom"></div>
       <div class="mosaic-overlay"></div>
       <!-- Search button -->
-      <button class="dashboard-search-btn" @click.stop="$emit('open-library')" title="Browse Library">
-        <MdiIcon :path="mdiMagnify" :size="28" />
-      </button>
+      <div class="dashboard-top-btns">
+        <button class="dashboard-icon-btn" @click.stop="$emit('toggle-settings')" title="Settings">
+          <MdiIcon :path="mdiCog" :size="28" />
+        </button>
+        <button class="dashboard-icon-btn" @click.stop="$emit('open-library')" title="Browse Library">
+          <MdiIcon :path="mdiMagnify" :size="28" />
+        </button>
+      </div>
     </div>
     <!-- Logo -->
     <div class="dashboard-logo">
@@ -96,7 +101,7 @@
 <script setup>
 import { computed, ref, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import MdiIcon from './MdiIcon.vue'
-import { mdiMagnify } from '@mdi/js'
+import { mdiMagnify, mdiCog } from '@mdi/js'
 
 import { splitTitle } from '../utils/titleParser.js'
 
@@ -104,7 +109,7 @@ const props = defineProps({
   favorites: { type: Array, default: () => [] },
 })
 
-defineEmits(['select', 'open-kanban', 'open-library'])
+defineEmits(['select', 'open-kanban', 'open-library', 'toggle-settings'])
 
 const totalSongs = computed(() => props.favorites.length)
 
@@ -300,11 +305,16 @@ onUnmounted(() => {
   position: relative;
 }
 
-.dashboard-search-btn {
+.dashboard-top-btns {
   position: fixed;
   top: 1rem;
   right: 1.5rem;
   z-index: 5;
+  display: flex;
+  gap: 0.5rem;
+}
+
+.dashboard-icon-btn {
   background: rgba(255, 255, 255, 0.08);
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 50%;
@@ -318,7 +328,7 @@ onUnmounted(() => {
   transition: background var(--speed-normal), color var(--speed-normal);
 }
 
-.dashboard-search-btn:hover {
+.dashboard-icon-btn:hover {
   background: rgba(255, 255, 255, 0.15);
   color: rgba(255, 255, 255, 0.9);
 }

@@ -47,6 +47,11 @@
                 <input type="checkbox" v-model="filterInSetlist" />
                 <span class="filter-label-dot" style="--lc:#2ecc71">In Setlist</span>
               </label>
+              <div class="filter-divider"></div>
+              <label class="filter-item">
+                <input type="checkbox" v-model="filterNotInPlaylist" />
+                <span>Not in playlist</span>
+              </label>
             </div>
           </div>
           <div v-if="favorites.length" class="filter-wrapper">
@@ -59,6 +64,10 @@
               <MdiIcon :path="mdiSort" :size="32" />
             </button>
             <div v-if="showSortDropdown" class="filter-dropdown" @click.stop>
+              <button class="filter-item filter-btn" :class="{ active: sortBy === 'alpha' }" @click="toggleSort('alpha')">
+                <span>Alphabetical</span>
+                <span v-if="sortBy === 'alpha'" class="sort-arrow">{{ sortDir === 'asc' ? '↑' : '↓' }}</span>
+              </button>
               <button class="filter-item filter-btn" :class="{ active: sortBy === 'label' }" @click="toggleSort('label')">
                 <span>Label</span>
                 <span v-if="sortBy === 'label'" class="sort-arrow">{{ sortDir === 'asc' ? '↑' : '↓' }}</span>
@@ -144,10 +153,17 @@
               <button
                 class="played-check"
                 :class="{ checked: !!entry.fav.played }"
-                title="Increment play count"
+                title="Played"
                 @click.stop="incrementPlayed(entry.realIndex)"
               >{{ entry.fav.played ? '✓' : '' }}</button>
-              <span class="label-dot-indicator" :style="{ background: labelColor(entry.fav.label) }"></span>
+              <span
+                v-if="entry.fav.notInPlaylist"
+                class="not-in-playlist-icon"
+                title="Not in source playlist"
+              >
+                <MdiIcon :path="mdiPlaylistRemove" :size="16" />
+              </span>
+              <span class="label-dot-indicator" :style="{ background: labelColor(entry.fav.label) }" :title="labelName(entry.fav.label)"></span>
             </span>
             <div class="library-item-info">
               <span class="library-item-artist">{{ truncate(splitTitle(entry.fav.title).artist, 50) }}</span>
@@ -191,6 +207,7 @@
         @edit-count="editPlayCountFromCtx"
         @clear-count="clearPlayCountFromCtx"
         @delete="deleteFromCtx"
+        @add-to-source="addToSourcePlaylist"
         @close="closeContextMenu"
       />
     </div>
@@ -206,7 +223,7 @@ import NewSongForm from './NewSongForm.vue'
 import {
   mdiPlus, mdiDownload, mdiUpload, mdiFilterVariant, mdiRefresh,
   mdiViewColumn, mdiDice5, mdiCog, mdiChevronLeft, mdiChevronRight,
-  mdiSort, mdiHome,
+  mdiSort, mdiHome, mdiPlaylistRemove,
 } from '@mdi/js'
 
 import { useFavorites } from '../composables/useFavorites.js'
@@ -223,13 +240,13 @@ const query = ref('')
 const inputRef = ref(null)
 const favContainerRef = ref(null)
 const backdropMouseDown = ref(false)
-const showSettings = ref(false)
 const showNewSong = ref(false)
 const hidePlayed = ref(false)
 const filterNoChords = ref(false)
 const filterFresh = ref(false)
 const filterGettingThere = ref(false)
 const filterInSetlist = ref(false)
+const filterNotInPlaylist = ref(false)
 const showFilterDropdown = ref(false)
 const sortBy = ref('none')
 const sortDir = ref('asc')
@@ -263,6 +280,11 @@ function toggleSort(field) {
 function labelColor(label) {
   const opt = labelOptions.find(o => o.value === label)
   return opt ? opt.color : 'transparent'
+}
+
+function labelName(label) {
+  const opt = labelOptions.find(o => o.value === label)
+  return opt ? opt.name : ''
 }
 
 const ctxMenu = reactive({ show: false, x: 0, y: 0, index: -1, fav: null })
@@ -307,6 +329,35 @@ function deleteFromCtx() {
     if (confirm(`Remove "${name}" from favorites?`)) {
       removeFavorite(ctxMenu.index)
     }
+  }
+}
+
+async function addToSourcePlaylist() {
+  const fav = ctxMenu.fav
+  ctxMenu.show = false
+  if (!fav?.spotifyTrackId) return
+
+  try {
+    const res = await fetch('/api/spotify/playlists/add-to-source', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ trackId: fav.spotifyTrackId }),
+    })
+    const data = await res.json()
+    if (data.ok) {
+      fav.notInPlaylist = false
+      // Update DB
+      if (fav.id) {
+        fetch(`/api/songs/${fav.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ notInPlaylist: false }),
+        })
+      }
+      emit('updated')
+    }
+  } catch (err) {
+    console.warn('Failed to add to source playlist:', err.message)
   }
 }
 
@@ -378,6 +429,7 @@ const activeFilterCount = computed(() => {
   if (filterFresh.value) count++
   if (filterGettingThere.value) count++
   if (filterInSetlist.value) count++
+  if (filterNotInPlaylist.value) count++
   return count
 })
 
@@ -385,6 +437,23 @@ function closeFilterDropdown(e) {
   if (showFilterDropdown.value) showFilterDropdown.value = false
   if (showSortDropdown.value) showSortDropdown.value = false
 }
+
+// Local Escape: close ephemeral UI (dropdowns, context menu) before global handler fires
+useEventListener(window, 'keydown', (e) => {
+  if (e.key !== 'Escape') return
+  if (ctxMenu.show) {
+    e.stopImmediatePropagation()
+    closeContextMenu()
+    return
+  }
+  if (showFilterDropdown.value || showSortDropdown.value || showNewSong.value) {
+    e.stopImmediatePropagation()
+    showFilterDropdown.value = false
+    showSortDropdown.value = false
+    showNewSong.value = false
+    return
+  }
+}, { capture: true })
 
 watch(hidePlayed, v => {
   fetch('/api/settings/filters', {
@@ -452,6 +521,7 @@ const displayedFavorites = computed(() => {
   let list = favorites.value
   if (hidePlayed.value) list = list.filter(f => !f.played)
   if (filterNoChords.value) list = list.filter(f => !f.customChords || f.customChords.length === 0)
+  if (filterNotInPlaylist.value) list = list.filter(f => !!f.notInPlaylist)
   const anyLabel = filterFresh.value || filterGettingThere.value || filterInSetlist.value
   if (anyLabel) {
     list = list.filter(f => {
@@ -466,7 +536,9 @@ const displayedFavorites = computed(() => {
     const labelOrder = { 'fresh': 0, 'getting-there': 1, 'in-setlist': 2 }
     list = [...list].sort((a, b) => {
       let cmp = 0
-      if (sortBy.value === 'label') {
+      if (sortBy.value === 'alpha') {
+        cmp = (a.title || '').localeCompare(b.title || '')
+      } else if (sortBy.value === 'label') {
         cmp = (labelOrder[a.label] || 0) - (labelOrder[b.label] || 0)
       } else if (sortBy.value === 'playCount') {
         cmp = (a.playCount || 0) - (b.playCount || 0)
@@ -946,6 +1018,11 @@ onMounted(async () => {
   opacity: 0.7;
 }
 
+.not-in-playlist-icon {
+  color: var(--text-dim);
+  opacity: 0.6;
+}
+
 .play-count {
   font-size: 1.2rem;
   color: var(--text-dim);
@@ -1048,7 +1125,7 @@ onMounted(async () => {
   display: flex;
   flex-direction: column;
   gap: 0.15rem;
-  padding-right: 1.5rem;
+  padding-right: 4rem;
 }
 
 .library-item-artist {

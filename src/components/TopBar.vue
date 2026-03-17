@@ -1,13 +1,13 @@
 <template>
   <!-- Top-left: font size controls -->
-  <div v-if="!editingLyrics && hasLyrics" class="top-left-group">
+  <div v-if="page === 'lyrics' && !editingLyrics && hasLyrics" class="top-left-group">
     <button class="edit-action-btn" @click="$emit('adjust-font', -1)" title="Decrease font"><MdiIcon :path="mdiMinus" :size="16" /></button>
     <button class="edit-action-btn" @click="$emit('reset-font')" title="Reset font"><MdiIcon :path="mdiRefresh" :size="16" /></button>
     <button class="edit-action-btn" @click="$emit('adjust-font', 1)" title="Increase font"><MdiIcon :path="mdiPlus" :size="16" /></button>
   </div>
 
   <!-- Top-right: edit + search + played + label + star + page indicator -->
-  <div v-if="hasTitle" class="top-right-group">
+  <div v-if="page === 'lyrics' && hasTitle" class="top-right-group">
     <template v-if="editingLyrics">
       <button class="edit-action-btn save" @click="$emit('save-edit')" title="Save"><MdiIcon :path="mdiCheck" :size="16" /> Save</button>
       <button class="edit-action-btn cancel" @click="$emit('cancel-edit')" title="Cancel"><MdiIcon :path="mdiClose" :size="16" /> Cancel</button>
@@ -69,6 +69,7 @@ const props = defineProps({
   editingLyrics: { type: Boolean, default: false },
   hasLyrics: { type: Boolean, default: false },
   hasTitle: { type: Boolean, default: false },
+  page: { type: String, default: 'dashboard' },
   isSaved: { type: Boolean, default: false },
   currentLabel: { type: String, default: null },
   currentPlayed: { type: Boolean, default: false },

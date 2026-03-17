@@ -5,14 +5,15 @@ import * as db from './db.js'
 import { handleSpotifyIdRequest, handlePlaylistTracks } from './spotify.js'
 import { handlePopularArt } from './popularArt.js'
 import { setupUGImportRoutes, setupBookmarkletRoutes } from './ugImport.js'
+import { setupSpotifyAuthRoutes } from './spotifyAuth.js'
+import { setupSpotifyPlaylistRoutes } from './spotifyPlaylists.js'
 
-// --- Validate required env vars at startup ---
-const requiredEnv = ['SPOTIFY_CLIENT_ID', 'SPOTIFY_CLIENT_SECRET']
-const missing = requiredEnv.filter(k => !process.env[k])
+// --- Warn on missing Spotify env vars (non-fatal) ---
+const spotifyEnv = ['SPOTIFY_CLIENT_ID', 'SPOTIFY_CLIENT_SECRET']
+const missing = spotifyEnv.filter(k => !process.env[k])
 if (missing.length) {
-  console.error(`\n❌ Missing required environment variables: ${missing.join(', ')}`)
-  console.error('   Copy .env.example to .env and fill in your Spotify credentials.\n')
-  process.exit(1)
+  console.warn(`\n⚠️  Missing Spotify credentials: ${missing.join(', ')}`)
+  console.warn('   Spotify features will be disabled. Copy .env.example to .env to configure.\n')
 }
 
 // --- Route helpers for Connect/Express compatibility ---
@@ -24,10 +25,10 @@ function route(server, method, path, handler) {
   })
 }
 
-function get(server, path, handler) { route(server, 'GET', path, handler) }
-function post(server, path, handler) { route(server, 'POST', path, handler) }
-function put(server, path, handler) { route(server, 'PUT', path, handler) }
-function del(server, path, handler) { route(server, 'DELETE', path, handler) }
+export function get(server, path, handler) { route(server, 'GET', path, handler) }
+export function post(server, path, handler) { route(server, 'POST', path, handler) }
+export function put(server, path, handler) { route(server, 'PUT', path, handler) }
+export function del(server, path, handler) { route(server, 'DELETE', path, handler) }
 
 /** Parse JSON body from request (works with both Connect and Express) */
 export function parseBody(req) {
@@ -101,6 +102,10 @@ export function setupAPI(server) {
   // UG import + bookmarklet routes
   setupUGImportRoutes(server)
   setupBookmarkletRoutes(server, import.meta.dirname)
+
+  // Spotify auth + playlist routes
+  setupSpotifyAuthRoutes(server, { get, post, json })
+  setupSpotifyPlaylistRoutes(server, { get, post, json })
 
   // ===== Songs CRUD =====
 

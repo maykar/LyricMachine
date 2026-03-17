@@ -5,6 +5,7 @@
       :editing-lyrics="editingLyrics"
       :has-lyrics="!!currentLyrics"
       :has-title="!!currentTitle"
+      :page="page"
       :is-saved="isSaved"
       :current-label="currentLabel"
       :current-played="currentPlayed"
@@ -16,30 +17,35 @@
       @save-edit="exitEditMode"
       @cancel-edit="cancelEditMode"
       @enter-edit="enterEditMode"
-      @open-library="pushView('library')"
-      @toggle-settings="showSettings = !showSettings"
+      @open-library="goToPage('library')"
+      @toggle-settings="toggleModal('settings')"
       @toggle-star="toggleStar"
-      @set-label="setLabel"
+      @set-label="onSetLabel"
       @toggle-played="togglePlayed"
     />
 
-    <!-- Settings dropdown -->
+    <!-- Settings modal -->
     <SettingsDropdown
-      v-if="showSettings"
+      v-if="isModalOpen('settings')"
       :defaults="userDefaults"
       :apply-status="applyStatus"
       :reset-chord-status="resetChordStatus"
+      :spotify-connected="spotifyConnected"
+      :spotify-user="spotifyUser"
       @save-defaults="saveDefaults"
       @apply-defaults-to-all="handleApplyDefaultsToAll"
       @reset-all-chords="handleClearAllChords"
       @clear-played-status="clearAllPlayed"
-      @close="showSettings = false"
+      @connect-spotify="connectSpotify"
+      @disconnect-spotify="onDisconnectSpotify"
+      @trigger-sync="onSpotifySync"
+      @close="closeModal('settings')"
     />
 
-    <!-- Main lyrics display -->
+    <!-- Main content area: page-based rendering -->
     <div class="lyrics-container">
       <textarea
-        v-if="editingLyrics"
+        v-if="editingLyrics && page === 'lyrics'"
         ref="editTextarea"
         v-model="editLyricsText"
         class="lyrics-editor"
@@ -47,30 +53,43 @@
       ></textarea>
 
       <LyricsDisplay
-        v-else-if="currentLyrics"
+        v-else-if="page === 'lyrics'"
         ref="lyricsRef"
         :lyrics="currentLyrics"
         :initial-adjust="fontAdjust"
         :initial-merge="songMerge"
         :initial-separators="songSeparators"
         :initial-alt-colors="songAltColors"
-        :overlay-open="currentView !== null"
+        :overlay-open="hasModal"
         @adjust-changed="onAdjustChanged"
         @merge-changed="onMergeChanged"
         @separators-changed="onSeparatorsChanged"
         @alt-colors-changed="onAltColorsChanged"
       />
 
+      <LibraryOverlay
+        v-else-if="page === 'library'"
+        @select="onSongSelect"
+        @close="goBack"
+        @go-home="goHome"
+        @updated="onLibraryUpdated"
+        @defaults-changed="onDefaultsChanged"
+        @toggle-settings="toggleModal('settings')"
+        @open-randomizer="pushModal('randomizer')"
+        @open-kanban="openKanban"
+      />
+
       <Dashboard
         v-else
         :favorites="favorites"
         @select="onSongSelect"
-        @open-kanban="pushView('kanban')"
-        @open-library="pushView('library')"
+        @open-kanban="openKanban"
+        @open-library="goToPage('library')"
+        @toggle-settings="toggleModal('settings')"
       />
     </div>
 
-    <!-- Chord Drawer -->
+    <!-- Chord Drawer (lyrics sub-panel, not in nav stack) -->
     <Transition
       @enter="onFooterEnter"
       @after-enter="onFooterAfterEnter"
@@ -79,7 +98,7 @@
       :css="false"
     >
       <ChordDrawer
-        v-if="showChords && currentLyrics"
+        v-if="showChords && page === 'lyrics'"
         :loading="chordsLoading"
         :found="chordsFound"
         :sections="chordSections"
@@ -91,40 +110,26 @@
       />
     </Transition>
 
-    <!-- Spotify Player -->
+    <!-- Spotify Player (lyrics sub-panel, not in nav stack) -->
     <SpotifyPlayer
       ref="spotifyPlayerRef"
-      :visible="showPlayer && !!currentLyrics"
+      :visible="showPlayer && page === 'lyrics'"
       :spotify-track-id="spotifyTrackId"
     />
 
-    <!-- Library Overlay -->
-    <LibraryOverlay
-      v-if="isOpen('library')"
-      @select="onSongSelect"
-      @close="popView"
-      @go-home="goHome"
-      @updated="refreshCurrentSong"
-      @defaults-changed="onDefaultsChanged"
-      @toggle-settings="showSettings = !showSettings"
-      @open-randomizer="pushView('randomizer')"
-      @open-kanban="pushView('kanban')"
-    />
-
-    <!-- Song Randomizer (standalone) -->
+    <!-- Modals: float on top of any page -->
     <SongRandomizer
-      v-if="isOpen('randomizer')"
+      v-if="isModalOpen('randomizer')"
       :favorites="favorites"
       @select="onRandomizerSelect"
-      @close="popView"
+      @close="closeModal('randomizer')"
     />
 
-    <!-- Kanban View (standalone) -->
     <KanbanView
-      v-if="isOpen('kanban')"
+      v-if="isModalOpen('kanban')"
       :favorites="favorites"
       @update="onKanbanUpdate"
-      @close="popView"
+      @close="onKanbanClose"
     />
   </div>
 </template>
@@ -147,7 +152,8 @@ import { useChords } from './composables/useChords.js'
 import { useUGImport } from './composables/useUGImport.js'
 import { usePlaylistSync } from './composables/usePlaylistSync.js'
 import { useKeyboard } from './composables/useKeyboard.js'
-import { useViewStack } from './composables/useViewStack.js'
+import { useNavigation } from './composables/useNavigation.js'
+import { useSpotifyAuth } from './composables/useSpotifyAuth.js'
 
 // --- Composables ---
 const {
@@ -159,7 +165,7 @@ const {
 } = useFavorites()
 
 const {
-  userDefaults, showSettings, applyStatus,
+  userDefaults, applyStatus,
   resetChordStatus,
   loadUserDefaults, saveDefaults, onDefaultsChanged,
   applyDefaultsToAll, clearAllChords,
@@ -179,8 +185,80 @@ const { startUGImportPoll, stopUGImportPoll } = useUGImport(
 
 const { syncPlaylist, backfillAlbumArt } = usePlaylistSync(favorites, userDefaults)
 
-// --- UI state ---
-const { currentView, pushView, popView, clearViews, isOpen } = useViewStack()
+const {
+  spotifyConnected, spotifyUser,
+  checkSpotifyStatus, connectSpotify, disconnectSpotify,
+} = useSpotifyAuth()
+
+async function onDisconnectSpotify() {
+  await disconnectSpotify()
+}
+
+async function onSpotifySync() {
+  // Reload favorites after sync since server may have added/modified songs
+  await loadFavorites()
+}
+
+// --- Debounced label→playlist sync ---
+let labelSyncTimer = null
+let labelsDirty = false
+let lastSyncAt = 0
+const SYNC_COOLDOWN = 30000 // 30s
+
+async function flushLabelSync() {
+  clearTimeout(labelSyncTimer)
+  if (!labelsDirty || !spotifyConnected.value) return
+  labelsDirty = false
+  try {
+    await fetch('/api/spotify/playlists/sync', { method: 'POST' })
+    lastSyncAt = Date.now()
+    console.log('Label playlist sync complete')
+  } catch (err) {
+    console.warn('Label playlist sync failed:', err.message)
+  }
+}
+
+function scheduleLabelSync() {
+  if (!spotifyConnected.value) return
+  labelsDirty = true
+  clearTimeout(labelSyncTimer)
+  labelSyncTimer = setTimeout(flushLabelSync, 5000)
+}
+
+function onSetLabel(label) {
+  setLabel(label)
+  scheduleLabelSync()
+}
+
+function onLibraryUpdated() {
+  refreshCurrentSong()
+  scheduleLabelSync()
+}
+
+async function openKanban() {
+  pushModal('kanban')
+  // Rate-limited pull from Spotify before showing the board
+  if (spotifyConnected.value && Date.now() - lastSyncAt > SYNC_COOLDOWN) {
+    try {
+      await fetch('/api/spotify/playlists/sync', { method: 'POST' })
+      lastSyncAt = Date.now()
+      await loadFavorites()
+    } catch {}
+  }
+}
+
+// --- UI state (unified navigation) ---
+const {
+  page, goToPage, goBack,
+  hasModal, pushModal, closeModal, popModal, isModalOpen,
+  dismissTop,
+} = useNavigation()
+
+function toggleModal(name) {
+  if (isModalOpen(name)) closeModal(name)
+  else pushModal(name)
+}
+
 const lyricsRef = ref(null)
 const spotifyPlayerRef = ref(null)
 const editingLyrics = ref(false)
@@ -188,7 +266,7 @@ const editLyricsText = ref('')
 const editTextarea = ref(null)
 
 function goHome() {
-  clearViews()
+  goToPage('dashboard')
   currentTitle.value = ''
   currentLyrics.value = ''
   showChords.value = false
@@ -197,10 +275,16 @@ function goHome() {
 
 function onKanbanUpdate(updatedFavs) {
   favorites.value = updatedFavs
+  scheduleLabelSync()
+}
+
+function onKanbanClose() {
+  closeModal('kanban')
+  flushLabelSync()
 }
 
 function onRandomizerSelect(fav) {
-  clearViews()
+  closeModal('randomizer')
   onSongSelect(fav)
 }
 
@@ -208,14 +292,15 @@ function onRandomizerSelect(fav) {
 useKeyboard({
   editingLyrics,
   cancelEditMode,
-  currentView,
-  pushView,
-  popView,
-  goHome,
-  currentTitle,
-  currentLyrics,
+  page,
+  hasModal,
+  dismissTop,
+  goToPage,
+  pushModal,
   showChords,
   showPlayer,
+  currentTitle,
+  currentLyrics,
   startUGImportPoll,
 })
 
@@ -227,7 +312,7 @@ function onSongSelect({ title, lyrics, fontAdjust: fa, merge, separators, altCol
   songMerge.value = merge !== undefined ? merge : userDefaults.value.merge
   songSeparators.value = separators !== undefined ? separators : userDefaults.value.separators
   songAltColors.value = altColors !== undefined ? altColors : userDefaults.value.altColors
-  clearViews()
+  goToPage('lyrics')
   refreshCurrentSong()
   fetchChords(title)
 }
@@ -351,9 +436,9 @@ watch(showPlayer, (val) => {
   }
 })
 
-// --- Stop Spotify when leaving lyric page ---
-watch(() => isOpen('library'), (val) => {
-  if (val) {
+// --- Stop Spotify when leaving lyrics page ---
+watch(page, (newPage, oldPage) => {
+  if (oldPage === 'lyrics' && newPage !== 'lyrics') {
     showPlayer.value = false
     spotifyTrackId.value = null  // destroy iframe fully
   }
@@ -366,6 +451,15 @@ onMounted(async () => {
 
   syncPlaylist().then(() => {
     backfillAlbumArt()
+  })
+
+  // Auto-sync label playlists on startup (pull changes from Spotify)
+  checkSpotifyStatus().then(() => {
+    if (spotifyConnected.value) {
+      fetch('/api/spotify/playlists/sync', { method: 'POST' })
+        .then(() => loadFavorites())
+        .catch(() => {})
+    }
   })
 })
 

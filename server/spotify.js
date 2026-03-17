@@ -65,10 +65,13 @@ export async function handleSpotifyIdRequest(req, res) {
 // --- Playlist tracks handler ---
 export async function handlePlaylistTracks(req, res) {
   try {
-    const playlistId = process.env.SPOTIFY_PLAYLIST_ID
+    // Import db lazily to avoid circular imports
+    const db = await import('./db.js')
+    const sourceSetting = db.getSetting('spotify_source_playlist')
+    const playlistId = sourceSetting?.value || sourceSetting || process.env.SPOTIFY_PLAYLIST_ID
     if (!playlistId) {
       res.writeHead(400, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify({ error: 'SPOTIFY_PLAYLIST_ID not set' }))
+      res.end(JSON.stringify({ error: 'No source playlist selected' }))
       return
     }
 

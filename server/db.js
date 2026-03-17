@@ -29,11 +29,19 @@ db.exec(`
     spotify_track_id TEXT,
     album_art       TEXT,
     capo            INTEGER,
+    not_in_playlist INTEGER DEFAULT 0,
     sort_order      INTEGER DEFAULT 0,
     created_at      TEXT DEFAULT (datetime('now')),
     updated_at      TEXT DEFAULT (datetime('now'))
   )
 `)
+
+// Migration: add not_in_playlist to existing databases
+try {
+  db.exec('ALTER TABLE songs ADD COLUMN not_in_playlist INTEGER DEFAULT 0')
+} catch {
+  // Column already exists
+}
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS settings (
@@ -52,10 +60,10 @@ const stmts = {
   insertSong:   db.prepare(`
     INSERT INTO songs (title, lyrics, font_adjust, merge, separators, alt_colors,
       label, played, play_count, custom_chords, custom_structure,
-      spotify_track_id, album_art, capo, sort_order)
+      spotify_track_id, album_art, capo, not_in_playlist, sort_order)
     VALUES (@title, @lyrics, @font_adjust, @merge, @separators, @alt_colors,
       @label, @played, @play_count, @custom_chords, @custom_structure,
-      @spotify_track_id, @album_art, @capo, @sort_order)
+      @spotify_track_id, @album_art, @capo, @not_in_playlist, @sort_order)
   `),
 
   updateSong:  null,  // built dynamically per-request (partial updates)
@@ -90,6 +98,7 @@ function rowToSong(row) {
     spotifyTrackId: row.spotify_track_id,
     albumArt: row.album_art,
     capo: row.capo,
+    notInPlaylist: !!row.not_in_playlist,
     sortOrder: row.sort_order,
   }
 }
@@ -111,6 +120,7 @@ function songToParams(song, sortOrder = 0) {
     spotify_track_id: song.spotifyTrackId || null,
     album_art: song.albumArt || null,
     capo: song.capo ?? null,
+    not_in_playlist: song.notInPlaylist ? 1 : 0,
     sort_order: sortOrder,
   }
 }
@@ -122,11 +132,11 @@ const FIELD_MAP = {
   label: 'label', played: 'played', playCount: 'play_count',
   customChords: 'custom_chords', customStructure: 'custom_structure',
   spotifyTrackId: 'spotify_track_id', albumArt: 'album_art',
-  capo: 'capo', sortOrder: 'sort_order',
+  capo: 'capo', notInPlaylist: 'not_in_playlist', sortOrder: 'sort_order',
 }
 
 // Fields that are booleans in client but INTEGER 0/1 in DB
-const BOOL_FIELDS = new Set(['merge', 'separators', 'alt_colors', 'played'])
+const BOOL_FIELDS = new Set(['merge', 'separators', 'alt_colors', 'played', 'not_in_playlist'])
 
 // Fields that are JSON in client but TEXT in DB
 const JSON_FIELDS = new Set(['custom_chords'])

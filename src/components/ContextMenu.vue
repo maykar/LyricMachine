@@ -28,12 +28,18 @@
     <button class="ctx-option ctx-delete" @click="$emit('delete')">
       <MdiIcon :path="mdiDelete" :size="14" /> Remove
     </button>
+    <template v-if="fav?.notInPlaylist">
+      <div class="ctx-divider"></div>
+      <button class="ctx-option" @click="$emit('add-to-source')">
+        <MdiIcon :path="mdiPlaylistPlus" :size="14" /> Add to source playlist
+      </button>
+    </template>
   </div>
 </template>
 
 <script setup>
 import MdiIcon from './MdiIcon.vue'
-import { mdiCheck, mdiPencil, mdiRefresh, mdiDelete } from '@mdi/js'
+import { mdiCheck, mdiPencil, mdiRefresh, mdiDelete, mdiPlaylistPlus } from '@mdi/js'
 import { LABEL_OPTIONS } from '../constants/labels.js'
 
 defineProps({
@@ -43,7 +49,7 @@ defineProps({
   fav: { type: Object, default: null },
 })
 
-defineEmits(['set-label', 'toggle-played', 'edit-count', 'clear-count', 'delete', 'close'])
+defineEmits(['set-label', 'toggle-played', 'edit-count', 'clear-count', 'delete', 'add-to-source', 'close'])
 </script>
 
 <style scoped>
