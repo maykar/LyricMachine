@@ -74,6 +74,11 @@ LyricMachine helps musicians display song lyrics, chords, and Spotify playback d
 │       ├── usePlaylistSync.js# Spotify playlist sync with title normalization, lyrics auto-fetch from lrclib, album art backfill
 │       ├── useSpotifyAuth.js# Client-side Spotify connection state (connected/user/status) via api.js
 │       └── useToast.js      # Singleton toast notifications — showToast(message, {type, duration}), auto-dismiss
+├── tests/
+│   ├── shared/              # normalize, titleParser
+│   ├── server/              # db assertions, spotifyFetch, parseBody, chordParser
+│   ├── client/              # api client, useToast, useFavorites, useSettings
+│   └── components/          # LyricsDisplay algorithms
 └── public/
     ├── SloshRat.png         # Mascot image
     ├── party.ogg            # Kanban celebration sound
@@ -86,6 +91,7 @@ LyricMachine helps musicians display song lyrics, chords, and Spotify playback d
 npm install
 cp .env.example .env        # Fill in your Spotify credentials
 npm run dev                  # Vite dev server on http://127.0.0.1:5555
+npm test                     # Run test suite
 ```
 
 ## Environment Variables
@@ -187,6 +193,23 @@ All shortcuts blocked when any modal is open.
 npm run build               # Build to dist/
 npm start                   # Express serves dist/ + API on port 3000
 ```
+
+## Testing
+
+Vitest test suite with happy-dom for Vue component support.
+
+```bash
+npm test                    # Run all tests once
+npm run test:watch          # Watch mode
+```
+
+4 tiers of tests:
+- **Tier 1 — Pure functions**: `shared/normalize`, `titleParser`, `chordParser`
+- **Tier 2 — Server logic**: column-name assertions, `spotifyFetch` retry/throw, `parseBody` size limit
+- **Tier 3 — Client composables**: `api.js` client, `useToast`, `useFavorites`, `useSettings`
+- **Tier 4 — Components**: `LyricsDisplay` algorithms (columns, alt-lines, cache key, collapseRepeats)
+
+When adding new features, add tests in the appropriate `tests/` subdirectory.
 
 ## Agent Tooling Notes
 

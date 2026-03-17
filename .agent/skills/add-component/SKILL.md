@@ -25,3 +25,4 @@ description: How to create a new Vue component for LyricMachine
 - [ ] Scoped styles
 - [ ] Keyboard accessibility where applicable
 - [ ] Responsive considerations (the app is designed for desktop/TV display but should handle resize)
+- [ ] Add tests for complex logic in `tests/components/<Name>.test.js`

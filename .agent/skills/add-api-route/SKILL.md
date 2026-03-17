@@ -90,3 +90,11 @@ All client-side code MUST use `api.*` methods instead of direct `fetch()` calls.
 - Logs `console.error` on failure
 - Fires toast notifications via `useToast`
 - Returns parsed JSON or `null` on failure
+
+## Testing
+
+After adding a route, add tests in the appropriate `tests/` directory:
+- **Server handler logic** → `tests/server/<feature>.test.js`
+- **Client api method** → add cases to `tests/client/api.test.js`
+
+Run `npm test` to verify.

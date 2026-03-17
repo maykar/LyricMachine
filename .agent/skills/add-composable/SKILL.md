@@ -52,3 +52,7 @@ All server calls MUST go through `src/api.js` — never use `fetch()` directly. 
 - `usePlaylistSync.js` — Spotify playlist sync + album art backfill
 - `useSpotifyAuth.js` — client-side Spotify connection state (connected/user/status) via api.js
 - `useToast.js` — singleton toast notifications (showToast, dismissToast)
+
+## Testing
+
+Add tests for new composables in `tests/client/use<Name>.test.js`. Mock `api.js` with `vi.mock()` to isolate composable logic. Run `npm test` to verify.
