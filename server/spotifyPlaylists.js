@@ -245,10 +245,15 @@ async function syncLabelPlaylists(userId, bandName) {
       console.log(`Label sync: removed ${actualRemoves.length} tracks from "${labelDisplayName}"`)
     }
 
+    // Track IDs we just removed from this playlist (push step above) so we
+    // don't re-import them in the pull step from the stale snapshot.
+    const removedIds = new Set(actualRemoves.map(t => t.id))
+
     // Pull: import tracks added on Spotify that aren't in our library
     const existingNormalized = new Map(songs.map(s => [normalize(s.title), s]))
     for (const track of playlistTracks) {
       if (track.type !== 'track') continue
+      if (removedIds.has(track.id)) continue // skip tracks we just pushed out
       const title = `${track.artist} \u2014 ${track.name}`
       const existing = existingNormalized.get(normalize(title))
       if (existing) {

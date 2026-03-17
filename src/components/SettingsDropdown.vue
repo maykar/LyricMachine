@@ -27,6 +27,21 @@
           <span v-if="resetChordStatus" class="apply-status">{{ resetChordStatus }}</span>
           <button class="accent-btn apply-all-btn" @click="$emit('clear-played-status')">Clear played status</button>
           <button class="accent-btn apply-all-btn" @click="openBookmarklet">UG Import bookmarklet</button>
+
+          <div class="settings-divider"></div>
+          <div class="settings-section-title">Data</div>
+          <div class="backup-row">
+            <button class="accent-btn apply-all-btn" @click="exportBackup">↓ Backup</button>
+            <button class="accent-btn apply-all-btn" @click="restoreFileInput?.click()">↑ Restore</button>
+          </div>
+          <span v-if="restoreStatus" class="apply-status">{{ restoreStatus }}</span>
+          <input
+            ref="restoreFileInput"
+            type="file"
+            accept=".json"
+            style="display: none"
+            @change="importRestore"
+          />
         </div>
 
         <!-- Column 2: Keyboard shortcuts -->
@@ -129,6 +144,7 @@ import { ref, onMounted } from 'vue'
 import MdiIcon from './MdiIcon.vue'
 import { mdiClose, mdiSpotify } from '@mdi/js'
 import { api } from '../api.js'
+import { useFavorites } from '../composables/useFavorites.js'
 
 const props = defineProps({
   defaults: { type: Object, required: true },
@@ -144,9 +160,13 @@ const emit = defineEmits([
   'connect-spotify', 'disconnect-spotify', 'trigger-sync',
 ])
 
+const { favorites, loadFavorites } = useFavorites()
+
 const backdropDown = ref(false)
 const confirmClearChords = ref(false)
 let confirmTimer = null
+const restoreFileInput = ref(null)
+const restoreStatus = ref('')
 
 // Band name
 const bandNameInput = ref('')
@@ -180,6 +200,35 @@ function onClearChords() {
 
 function openBookmarklet() {
   window.open('/api/bookmarklet', '_blank')
+}
+
+// --- Backup / Restore ---
+function exportBackup() {
+  const a = document.createElement('a')
+  a.href = '/api/export'
+  a.download = 'lyricmachine-backup.json'
+  a.click()
+}
+
+async function importRestore(e) {
+  const file = e.target.files[0]
+  if (!file) return
+  try {
+    const text = await file.text()
+    const imported = JSON.parse(text)
+    if (!Array.isArray(imported)) throw new Error('Invalid format')
+    const result = await api.importSongs(imported)
+    if (result) {
+      await loadFavorites()
+      restoreStatus.value = 'Restore complete!'
+    } else {
+      restoreStatus.value = 'Restore failed'
+    }
+  } catch {
+    restoreStatus.value = 'Invalid file'
+  }
+  e.target.value = ''
+  setTimeout(() => { restoreStatus.value = '' }, 4000)
 }
 
 // --- Band name ---
@@ -418,5 +467,22 @@ onMounted(async () => {
 .accent-btn--sm {
   padding: 0.2rem 0.6rem;
   font-size: var(--font-xs);
+}
+
+.settings-divider {
+  height: 1px;
+  background: var(--border-light);
+  margin: var(--space-md) 0.5rem;
+}
+
+.backup-row {
+  display: flex;
+  gap: var(--space-sm);
+  margin-left: 0.5rem;
+  margin-top: var(--space-md);
+}
+
+.backup-row .apply-all-btn {
+  margin-top: 0;
 }
 </style>

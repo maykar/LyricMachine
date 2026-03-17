@@ -55,12 +55,11 @@ LyricMachine helps musicians display song lyrics, chords, and Spotify playback d
 │   │   ├── KanbanView.vue   # Kanban board modal for song categorization with drag-and-drop, confetti, party sound
 │   │   ├── SongRandomizer.vue# Slot-machine random song picker modal with carousel animation, celebrations
 │   │   ├── ChordDrawer.vue  # Collapsible chord chart footer with transpose, edit mode, capo display
-│   │   ├── SettingsDropdown.vue# Settings modal: defaults, Spotify connection, band name, mosaic genres, source playlist, sync
-│   │   ├── SpotifyPlayer.vue# Embedded Spotify player via iframe
+│   │   ├── SettingsDropdown.vue# Settings modal: defaults, Spotify connection, band name, mosaic genres, source playlist, sync, backup/restore
+│   │   ├── SpotifyPlayer.vue# Embedded Spotify player via iframe, interaction-guarded pause
 │   │   ├── ContextMenu.vue  # Right-click context menu (label/played/delete/add-to-source)
 │   │   ├── NewSongForm.vue  # Manual song creation form (artist + track + lyrics)
 │   │   ├── SearchOverlay.vue# Quick single-result song search via lrclib
-│   │   ├── FavoritesOverlay.vue# Simple favorites list with export/import JSON and remove
 │   │   ├── ToastContainer.vue# Stacked toast notifications at bottom-right with slide-in animation
 │   │   ├── StarButton.vue   # Star/unsave toggle
 │   │   └── MdiIcon.vue      # SVG icon wrapper
@@ -158,7 +157,7 @@ All state lives in `useNavigation.js`. Keyboard shortcuts in `useKeyboard.js`.
 - **Bi-directional sync** — push local label changes to Spotify, pull Spotify changes to local
 - **Auto-sync triggers** — label change (5s debounce), kanban close (immediate), app startup, kanban open (30s cooldown)
 - **Podcast filtering** — non-track items skipped during sync
-- **Embedded player** — iframe player with auto-lookup track ID, track ID caching
+- **Embedded player** — iframe player with auto-lookup track ID, track ID caching, interaction-guarded pause (only sends toggle if user clicked play)
 
 ### API Client Architecture
 - **Centralized client** (`src/api.js`) — wraps every server endpoint; no direct `fetch()` calls in components

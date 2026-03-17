@@ -311,6 +311,8 @@ useKeyboard({
 })
 
 // --- Song selection ---
+let skipDrawerAnim = false
+
 function onSongSelect({ title, lyrics, fontAdjust: fa, merge, separators, altColors }) {
   currentTitle.value = title
   currentLyrics.value = lyrics
@@ -320,6 +322,7 @@ function onSongSelect({ title, lyrics, fontAdjust: fa, merge, separators, altCol
   songAltColors.value = altColors !== undefined ? altColors : userDefaults.value.altColors
   goToPage('lyrics')
   refreshCurrentSong()
+  skipDrawerAnim = true
   fetchChords(title)
 }
 
@@ -373,6 +376,14 @@ function triggerLyricsResize() {
 }
 
 function onFooterEnter(el, done) {
+  // Skip animation when drawer opens as part of song navigation
+  if (skipDrawerAnim) {
+    skipDrawerAnim = false
+    done()
+    nextTick(triggerLyricsResize)
+    return
+  }
+
   el.style.overflow = 'hidden'
   el.style.height = '0px'
   el.style.opacity = '0'
@@ -427,8 +438,10 @@ watch(showPlayer, (val) => {
       }
     }, 1000)
   } else {
-    // Pause playback via exposed method
-    spotifyPlayerRef.value?.pause()
+    // Only send toggle (pause) if user actually started playback.
+    // The embed's 'toggle' command starts music if nothing is playing,
+    // so we guard it behind the interacted flag.
+    spotifyPlayerRef.value?.pauseIfPlaying()
     clearInterval(focusInterval)
     focusInterval = null
   }

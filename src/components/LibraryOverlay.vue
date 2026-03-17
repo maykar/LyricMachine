@@ -13,8 +13,6 @@
         />
         <span v-if="!query.trim()" class="library-actions">
           <button class="action-btn" @click="toggleDropdown('newSong')" title="New Song"><MdiIcon :path="mdiPlus" :size="32" /></button>
-          <button v-if="favorites.length" class="action-btn" @click="exportFavorites" title="Export"><MdiIcon :path="mdiDownload" :size="32" /></button>
-          <button class="action-btn" @click="triggerImport" title="Import"><MdiIcon :path="mdiUpload" :size="32" /></button>
           <div v-if="favorites.length" class="filter-wrapper">
             <button
               class="action-btn"
@@ -184,13 +182,7 @@
         </div>
       </div>
 
-      <input
-        ref="fileInput"
-        type="file"
-        accept=".json"
-        style="display: none"
-        @change="importFavorites"
-      />
+
 
 
 
@@ -221,7 +213,7 @@ import MdiIcon from './MdiIcon.vue'
 import ContextMenu from './ContextMenu.vue'
 import NewSongForm from './NewSongForm.vue'
 import {
-  mdiPlus, mdiDownload, mdiUpload, mdiFilterVariant, mdiRefresh,
+  mdiPlus, mdiFilterVariant, mdiRefresh,
   mdiViewColumn, mdiDice5, mdiCog, mdiChevronLeft, mdiChevronRight,
   mdiSort, mdiHome, mdiPlaylistRemove,
 } from '@mdi/js'
@@ -477,7 +469,6 @@ function truncate(str, chars) {
   }
   return str.substring(0, chars) + '…'
 }
-const fileInput = ref(null)
 const searchResults = ref([])
 const searching = ref(false)
 const searched = ref(false)
@@ -618,38 +609,7 @@ async function resetAllPlayed() {
   emit('updated')
 }
 
-function exportFavorites() {
-  // Download from server API
-  const a = document.createElement('a')
-  a.href = '/api/export'
-  a.download = `lyricmachine-favorites-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}.json`
-  a.click()
-}
 
-function triggerImport() {
-  fileInput.value?.click()
-}
-
-async function importFavorites(e) {
-  const file = e.target.files[0]
-  if (!file) return
-
-  try {
-    const text = await file.text()
-    const imported = JSON.parse(text)
-    if (!Array.isArray(imported)) throw new Error()
-
-    const result = await api.importSongs(imported)
-    if (result) {
-      const songs = await api.getSongs()
-      if (songs) favorites.value = songs
-      emit('updated')
-    }
-  } catch {
-    // silently ignore bad files
-  }
-  e.target.value = ''
-}
 
 // --- Search with debounce ---
 const debouncedSearch = useDebounceFn((term) => doSearch(term), 400)

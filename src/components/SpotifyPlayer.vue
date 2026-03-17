@@ -15,22 +15,43 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, watch, onMounted, onUnmounted } from 'vue'
 
-defineProps({
+const props = defineProps({
   visible: { type: Boolean, default: false },
   spotifyTrackId: { type: String, default: null },
 })
 
 const iframeRef = ref(null)
+// Track whether user has clicked play in the embed.
+// When the user clicks inside the iframe, the parent window blurs.
+let hasInteracted = false
 
-function pause() {
-  if (iframeRef.value) {
+function onWindowBlur() {
+  // If the iframe is the active element, user clicked inside it (e.g. play)
+  setTimeout(() => {
+    if (document.activeElement === iframeRef.value) {
+      hasInteracted = true
+    }
+  }, 0)
+}
+
+onMounted(() => window.addEventListener('blur', onWindowBlur))
+onUnmounted(() => window.removeEventListener('blur', onWindowBlur))
+
+// Reset interaction state when track changes (new embed loaded)
+watch(() => props.spotifyTrackId, () => {
+  hasInteracted = false
+})
+
+function pauseIfPlaying() {
+  if (hasInteracted && iframeRef.value) {
     iframeRef.value.contentWindow?.postMessage({ command: 'toggle' }, '*')
+    hasInteracted = false
   }
 }
 
-defineExpose({ pause })
+defineExpose({ pauseIfPlaying })
 </script>
 
 <style scoped>
