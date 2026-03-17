@@ -10,35 +10,64 @@ The Express API is mounted as Vite middleware in dev and as standalone Express i
 ## Steps
 
 1. **Create or modify a handler** in `server/` (e.g., `server/myFeature.js`)
-2. Export a setup function: `export function setupMyRoutes(server) { ... }`
+2. Export a setup function that receives route helpers:
+   ```js
+   export function setupMyRoutes(server, { get, post, json }) { ... }
+   ```
 3. Register it in `server/api.js` inside `setupAPI()`:
    ```js
    import { setupMyRoutes } from './myFeature.js'
    // inside setupAPI:
-   setupMyRoutes(server)
+   setupMyRoutes(server, { get, post, json })
    ```
-4. Routes use low-level `server.use(path, handler)` pattern (compatible with both Vite middleware and Express)
 
-## Handler Pattern
+## Route Helper Pattern
+
+Use the `get`, `post`, and `json` helpers provided by `api.js`:
 
 ```js
-server.use('/api/my-endpoint', async (req, res, next) => {
-  if (req.method !== 'GET') return next()  // filter HTTP method
-  
-  try {
+export function setupMyRoutes(server, { get, post, json }) {
+  // GET endpoint
+  get(server, '/api/my-endpoint', async (req, res) => {
+    const data = { ok: true }
+    json(res, data)
+  })
+
+  // POST endpoint with body parsing
+  post(server, '/api/my-endpoint', async (req, res) => {
+    const body = await parseBody(req)
     // ... logic
-    res.writeHead(200, { 'Content-Type': 'application/json' })
-    res.end(JSON.stringify({ ok: true }))
-  } catch (err) {
-    console.error('My endpoint error:', err.message)
-    res.writeHead(500, { 'Content-Type': 'application/json' })
-    res.end(JSON.stringify({ error: err.message }))
-  }
-})
+    json(res, { ok: true })
+  })
+}
+```
+
+## Route Helpers Reference
+
+| Helper | Description |
+|--------|-------------|
+| `get(server, path, handler)` | Register a GET route |
+| `post(server, path, handler)` | Register a POST route |
+| `json(res, data, status?)` | Send JSON response (defaults to 200) |
+| `parseBody(req)` | Parse JSON request body (import from `api.js`) |
+
+## Database Access
+
+Import prepared statements from `server/db.js`:
+
+```js
+import { stmts, db } from './db.js'
+
+// Use prepared statements for common operations
+const songs = stmts.allSongs.all()
+
+// Or run ad-hoc queries
+const result = db.prepare('SELECT * FROM songs WHERE id = ?').get(id)
 ```
 
 ## Important Notes
-- Use `res.writeHead()` + `res.end()` (not `res.json()`) for Vite middleware compatibility
-- Parse request body manually with stream events (see `parseBody` in `ugImport.js`)
-- Access query params via `req.query` (Express) or `new URL(req.url, 'http://x').searchParams` (Vite)
+- Route helpers work with both Vite middleware and production Express
+- Use `parseBody(req)` from `api.js` for POST body parsing
+- Access query params via `new URL(req.url, 'http://x').searchParams`
 - Environment variables available via `process.env` after `loadEnv()` runs
+- Error handling: wrap in try/catch, use `json(res, { error: msg }, 500)` for errors

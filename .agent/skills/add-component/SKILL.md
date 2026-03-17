@@ -15,7 +15,8 @@ description: How to create a new Vue component for LyricMachine
 - Dark theme: black background (#000000), light text (#e8e8e8)
 - Accent: `#64ffda` (teal/cyan) used across the app
 - Font: Inter — already loaded globally
-- Overlays follow the `.overlay-backdrop` pattern in `style.css`
+- Design tokens (colors, spacing, radii): `src/style-tokens.css`
+- Global component styles: `src/style.css`
 - Animations: prefer Web Animations API (JS hooks on `<Transition>`) over CSS transitions
 
 ## Component Checklist

@@ -8,9 +8,17 @@ description: How to create a new Vue composable for LyricMachine
 1. Create `src/composables/use<Name>.js`
 2. Export a single function `use<Name>` that returns reactive state and methods
 3. Use `ref`, `computed`, `watch` from Vue — no `reactive()` for top-level state
-4. If the composable needs favorites access, accept `getFavorites` and `saveFavoritesArray` as parameters (dependency injection pattern used throughout)
+4. If the composable needs favorites access, accept `favorites` ref as a parameter (dependency injection pattern used throughout)
 5. Keep side effects (fetch, timers) inside the composable — clean up in `onUnmounted` if needed
 6. Wire it up in `App.vue` alongside other composables
+
+## Module-Level vs Function-Level State
+
+Some composables use **module-level state** (refs declared outside the function) so all consumers share the same instance. This pattern is used for:
+- `useNavigation.js` — page + modal stack (singleton, shared across all components)
+- `useFavorites.js` — favorites data (singleton, shared across all components)
+
+Use module-level state when the composable manages **app-wide singleton state**. Use function-level state (refs inside the function) when each consumer needs its own instance.
 
 ## Template
 
@@ -29,9 +37,11 @@ export function use<Name>(/* dependencies */) {
 ```
 
 ## Existing composables for reference
-- `useFavorites.js` — localStorage CRUD, current song state
+- `useNavigation.js` — unified navigation: 3 pages (dashboard/library/lyrics) + modal stack (settings/kanban/randomizer)
+- `useKeyboard.js` — global keyboard shortcuts, Escape calls `dismissTop()`
+- `useFavorites.js` — favorites CRUD via server API, current song state
 - `useSettings.js` — user defaults management
 - `useChords.js` — chord data fetching and caching
 - `useUGImport.js` — bookmarklet import polling
 - `usePlaylistSync.js` — Spotify playlist sync + album art backfill
-- `useKeyboard.js` — global keyboard shortcuts
+- `useSpotifyAuth.js` — client-side Spotify connection state (connected/user/status)
