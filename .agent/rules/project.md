@@ -3,7 +3,7 @@
 ## Stack
 - **Frontend:** Vue 3 (`<script setup>`) + Vite 7
 - **Backend:** Express 5 (ESM, `server/` directory)
-- **Database:** SQLite via Node.js built-in `node:sqlite` (`server/db.js`)
+- **Database:** SQLite via Node.js built-in `node:sqlite` (`server/db.js`) — auto-backup on startup (10 copies in `server/data/backups/`)
 - **Styling:** Vanilla CSS (`src/style.css`, `src/style-tokens.css`) — no Tailwind, no preprocessors
 - **Font:** Inter (Google Fonts)
 - **Icons:** `@mdi/js` via `MdiIcon.vue` wrapper component
@@ -113,6 +113,8 @@ SPOTIFY_REDIRECT_URI=...    # optional, defaults to http://127.0.0.1:5555/api/sp
 - Prefer template literals for string interpolation
 - Error handling: catch + log pattern, never crash the server
 - API responses: always set appropriate headers and use JSON
+- **Tests MUST NEVER import `server/db.js`** — see `security.md` Data Safety rules
+- **Tests MUST use `new DatabaseSync(':memory:')` for any database operations** — NEVER the production database
 
 ## Tooling Gotcha: ripgrep + .vue files
 - **Never** pass a single `.vue` file path directly to `grep_search` — ripgrep's binary detection may find a NUL byte (from Unicode chars like `★✦—`) and silently skip the file

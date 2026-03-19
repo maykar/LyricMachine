@@ -195,6 +195,10 @@ npm run build               # Build to dist/
 npm start                   # Express serves dist/ + API on port 3000
 ```
 
+## Database
+
+SQLite database at `server/data/lyricmachine.db`. **Automatic backups** on every server startup — stored in `server/data/backups/`, keeps last 10 timestamped copies.
+
 ## Testing
 
 Vitest test suite with happy-dom for Vue component support.
@@ -204,16 +208,38 @@ npm test                    # Run all tests once
 npm run test:watch          # Watch mode
 ```
 
-4 tiers of tests:
+6 tiers of tests:
 - **Tier 1 — Pure functions**: `shared/normalize`, `titleParser`, `chordParser`
 - **Tier 2 — Server logic**: column-name assertions, `spotifyFetch` retry/throw, `parseBody` size limit
-- **Tier 3 — Client composables**: `api.js` client, `useToast`, `useFavorites`, `useSettings`
-- **Tier 4 — Components**: `LyricsDisplay` algorithms (columns, alt-lines, cache key, collapseRepeats)
+- **Tier 3 — Server integration**: DB schema + CRUD via in-memory SQLite, API route handlers with mock req/res
+- **Tier 4 — Client composables**: `api.js`, `useToast`, `useFavorites`, `useSettings`, `useNavigation`, `useKeyboard`, `useChords`, `useUGImport`, `usePlaylistSync`, `useSpotifyAuth`
+- **Tier 5 — Client utilities**: `adjustDropdown`
+- **Tier 6 — Components**: `LyricsDisplay` algorithms, `MdiIcon`, `StarButton`, `NewSongForm`, `ContextMenu`, `ToastContainer`
 
 When adding new features, add tests in the appropriate `tests/` subdirectory.
+
+## ⚠️ MANDATORY — Data Safety Rules
+
+> **THESE RULES ARE NON-NEGOTIABLE. VIOLATING THEM CAUSES REAL DATA LOSS.**
+
+### Tests MUST NEVER touch production data
+- **NEVER** `import` or `require` `server/db.js` in any test file. It creates a singleton connection to the production SQLite database.
+- **ALWAYS** use `new DatabaseSync(':memory:')` (in-memory SQLite) for any test that needs a database.
+- **ALWAYS** add `// @vitest-environment node` to server test files that use `node:sqlite`.
+- **NEVER** run `DELETE`, `DROP`, `TRUNCATE`, or `UPDATE ... WHERE 1=1` against any file-backed database in tests.
+
+### Before writing ANY test
+- Ask: "Does this test touch the real database?" If yes, **STOP** and use `:memory:` instead.
+- Ask: "Does this test import a module that has side effects on the filesystem?" If yes, **mock it**.
+- Ask: "If this test fails or runs in an unexpected order, could it destroy user data?" If yes, **redesign it**.
+
+### Database changes
+- **NEVER** write code that can delete all rows from a production table. If bulk deletion is needed, require explicit confirmation or a safety flag.
+- **ALWAYS** consider what happens if your code runs against a database with real user data.
 
 ## Agent Tooling Notes
 
 > **`grep_search` bug**: Single-file `SearchPath` always returns "No results found". Use **directory** as `SearchPath` + `Includes` glob to filter. Example: `SearchPath: src/components`, `Includes: ["SongRandomizer.vue"]`.
 
 > **No browser agent**: Do NOT use the `browser_subagent` tool. It is unreliable and wastes time. Test locally or ask the user to verify.
+
