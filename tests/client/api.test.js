@@ -140,5 +140,20 @@ describe('api client', () => {
       await api[method]()
       expect(fetch).toHaveBeenCalledWith(url, {})
     })
+
+    it('bulkUpdate sends PUT to /api/songs/bulk-update', async () => {
+      await api.bulkUpdate('played', true)
+      const [url, opts] = fetch.mock.calls[0]
+      expect(url).toBe('/api/songs/bulk-update')
+      expect(opts.method).toBe('PUT')
+      expect(JSON.parse(opts.body)).toEqual({ field: 'played', value: true })
+    })
+
+    it('clearChords sends PUT to /api/songs/clear-chords', async () => {
+      await api.clearChords()
+      const [url, opts] = fetch.mock.calls[0]
+      expect(url).toBe('/api/songs/clear-chords')
+      expect(opts.method).toBe('PUT')
+    })
   })
 })

@@ -10,8 +10,8 @@ import { nextTick } from 'vue'
  */
 export async function adjustDropdown(elOrRef) {
   await nextTick()
-  const el = elOrRef?.value ?? elOrRef?.$el ?? elOrRef
-  if (!el) return
+  const el = elOrRef?.value || elOrRef?.$el || elOrRef
+  if (!el || !el.style) return
 
   // Reset any previous adjustments so measurements are from the CSS default
   el.style.removeProperty('top')
