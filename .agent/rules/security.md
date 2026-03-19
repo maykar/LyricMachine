@@ -20,7 +20,7 @@
 ### Database Backups
 - `server/db.js` creates automatic timestamped backups on every startup
 - Backups stored in `server/data/backups/` (gitignored, kept on disk)
-- Last 10 backups retained, older ones rotated out
+- Last 3 backups retained, older ones rotated out
 - Export/import via settings UI provides user-controlled backup
 
 ## Secrets Management

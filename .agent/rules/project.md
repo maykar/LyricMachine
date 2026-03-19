@@ -3,7 +3,7 @@
 ## Stack
 - **Frontend:** Vue 3 (`<script setup>`) + Vite 7
 - **Backend:** Express 5 (ESM, `server/` directory)
-- **Database:** SQLite via Node.js built-in `node:sqlite` (`server/db.js`) — auto-backup on startup (10 copies in `server/data/backups/`)
+- **Database:** SQLite via Node.js built-in `node:sqlite` (`server/db.js`) — auto-backup on startup (3 copies in `server/data/backups/`)
 - **Styling:** Vanilla CSS (`src/style.css`, `src/style-tokens.css`) — no Tailwind, no preprocessors
 - **Font:** Inter (Google Fonts)
 - **Icons:** `@mdi/js` via `MdiIcon.vue` wrapper component

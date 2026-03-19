@@ -197,7 +197,7 @@ npm start                   # Express serves dist/ + API on port 3000
 
 ## Database
 
-SQLite database at `server/data/lyricmachine.db`. **Automatic backups** on every server startup — stored in `server/data/backups/`, keeps last 10 timestamped copies.
+SQLite database at `server/data/lyricmachine.db`. **Automatic backups** on every server startup — stored in `server/data/backups/`, keeps last 3 timestamped copies.
 
 ## Testing
 

@@ -7,7 +7,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 const DATA_DIR = join(__dirname, 'data')
 const BACKUP_DIR = join(DATA_DIR, 'backups')
 const DB_PATH = join(DATA_DIR, 'lyricmachine.db')
-const MAX_BACKUPS = 10
+const MAX_BACKUPS = 3
 
 // Ensure data + backup directories exist
 mkdirSync(DATA_DIR, { recursive: true })
