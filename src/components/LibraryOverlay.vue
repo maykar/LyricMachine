@@ -23,7 +23,7 @@
               <MdiIcon :path="mdiFilterVariant" :size="32" />
               <span v-if="activeFilterCount" class="filter-badge">{{ activeFilterCount }}</span>
             </button>
-            <div v-if="showFilterDropdown" class="filter-dropdown" @click.stop>
+            <div v-if="showFilterDropdown" ref="filterDropRef" class="filter-dropdown" @click.stop>
               <label class="filter-item">
                 <input type="checkbox" v-model="hidePlayed" />
                 <span>Unplayed</span>
@@ -61,7 +61,7 @@
             >
               <MdiIcon :path="mdiSort" :size="32" />
             </button>
-            <div v-if="showSortDropdown" class="filter-dropdown" @click.stop>
+            <div v-if="showSortDropdown" ref="sortDropRef" class="filter-dropdown" @click.stop>
               <button class="filter-item filter-btn" :class="{ active: sortBy === 'alpha' }" @click="toggleSort('alpha')">
                 <span>Alphabetical</span>
                 <span v-if="sortBy === 'alpha'" class="sort-arrow">{{ sortDir === 'asc' ? '↑' : '↓' }}</span>
@@ -89,7 +89,7 @@
         <div class="library-section-label">Search Results</div>
         <div
           class="library-grid favorites-grid"
-          :style="{ gridTemplateRows: 'repeat(' + rowsPerPage + ', auto)' }"
+          :style="{ gridTemplateRows: 'repeat(' + rowsPerPage + ', auto)', gridTemplateColumns: 'repeat(' + cols + ', minmax(0, 1fr))' }"
         >
           <div
             v-for="(result, i) in searchResults"
@@ -131,7 +131,7 @@
         <div
           v-if="favorites.length"
           class="library-grid favorites-grid"
-          :style="{ gridTemplateRows: 'repeat(' + rowsPerPage + ', auto)' }"
+          :style="{ gridTemplateRows: 'repeat(' + rowsPerPage + ', auto)', gridTemplateColumns: 'repeat(' + cols + ', minmax(0, 1fr))' }"
         >
           <div
             v-for="entry in pagedFavorites"
@@ -207,7 +207,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, watch, onMounted, nextTick } from 'vue'
+import { ref, reactive, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useEventListener, useDebounceFn } from '@vueuse/core'
 import MdiIcon from './MdiIcon.vue'
 import ContextMenu from './ContextMenu.vue'
@@ -222,6 +222,7 @@ import { useFavorites } from '../composables/useFavorites.js'
 import { splitTitle } from '../utils/titleParser.js'
 import { LABEL_OPTIONS } from '../constants/labels.js'
 import { api } from '../api.js'
+import { adjustDropdown } from '../utils/adjustDropdown.js'
 
 // Storage keys removed — all persistence via server API
 const { favorites } = useFavorites()
@@ -244,13 +245,21 @@ const showFilterDropdown = ref(false)
 const sortBy = ref('none')
 const sortDir = ref('asc')
 const showSortDropdown = ref(false)
+const filterDropRef = ref(null)
+const sortDropRef = ref(null)
 
 function toggleDropdown(which) {
   if (which !== 'filter') showFilterDropdown.value = false
   if (which !== 'sort') showSortDropdown.value = false
   if (which !== 'newSong') showNewSong.value = false
-  if (which === 'filter') showFilterDropdown.value = !showFilterDropdown.value
-  else if (which === 'sort') showSortDropdown.value = !showSortDropdown.value
+  if (which === 'filter') {
+    showFilterDropdown.value = !showFilterDropdown.value
+    if (showFilterDropdown.value) adjustDropdown(filterDropRef)
+  }
+  else if (which === 'sort') {
+    showSortDropdown.value = !showSortDropdown.value
+    if (showSortDropdown.value) adjustDropdown(sortDropRef)
+  }
   else if (which === 'newSong') showNewSong.value = !showNewSong.value
 }
 
@@ -473,12 +482,31 @@ const searchResults = ref([])
 const searching = ref(false)
 const searched = ref(false)
 const favPage = ref(1)
-const rowsPerPage = ref(5)
+const CARD_HEIGHT_REM = 4  // approx card height + gap in rem
+// Eager initial estimate to avoid flash of half-filled grid before ResizeObserver fires
+const initialRows = Math.max(5, Math.floor(window.innerHeight / (CARD_HEIGHT_REM * 16)) - 2)
+const rowsPerPage = ref(initialRows)
+const cols = ref(4)
 
-const COLS = 4
-const CARD_HEIGHT = 64  // approx card height + gap in px
+function recalcLayout() {
+  const el = favContainerRef.value
+  if (!el) return
+  const rem = parseFloat(getComputedStyle(document.documentElement).fontSize)
+  const cardHeight = CARD_HEIGHT_REM * rem
+  const available = el.clientHeight - (5.625 * rem)
+  const rows = Math.max(2, Math.floor(available / cardHeight) - 2)
 
-const unplayedFavorites = computed(() => favorites.value.filter(f => !f.played))
+  // Use 3 columns if everything fits without pagination, else 4
+  const total = displayedFavorites.value.length
+  if (total <= rows * 3) {
+    cols.value = 3
+    // With wider cards, reduce rows by 1 to prevent overflow
+    rowsPerPage.value = Math.max(2, rows - 1)
+  } else {
+    cols.value = 4
+    rowsPerPage.value = rows
+  }
+}
 
 const displayedFavorites = computed(() => {
   let list = favorites.value
@@ -512,7 +540,7 @@ const displayedFavorites = computed(() => {
   return list
 })
 
-const perPage = computed(() => rowsPerPage.value * COLS)
+const perPage = computed(() => rowsPerPage.value * cols.value)
 const favTotalPages = computed(() => Math.max(1, Math.ceil(displayedFavorites.value.length / perPage.value)))
 
 const pagedFavorites = computed(() => {
@@ -695,10 +723,14 @@ onMounted(async () => {
 
   // Measure container to calculate how many rows fit
   await nextTick()
+  recalcLayout()
+
+  // Re-measure on resize
   const el = favContainerRef.value
   if (el) {
-    const available = el.clientHeight - 90
-    rowsPerPage.value = Math.max(2, Math.floor(available / CARD_HEIGHT) - 2)
+    const ro = new ResizeObserver(() => recalcLayout())
+    ro.observe(el)
+    onUnmounted(() => ro.disconnect())
   }
 })
 </script>
@@ -790,10 +822,10 @@ onMounted(async () => {
 
 .filter-badge {
   position: absolute;
-  top: -4px;
-  right: -4px;
-  width: 16px;
-  height: 16px;
+  top: -0.25rem;
+  right: -0.25rem;
+  width: 1rem;
+  height: 1rem;
   border-radius: 50%;
   background: var(--color-teal);
   color: var(--bg-app);
@@ -813,7 +845,7 @@ onMounted(async () => {
   border: 1px solid var(--border-light);
   border-radius: var(--radius-sm);
   padding: 0.5rem 0;
-  min-width: 160px;
+  min-width: 10rem;
   z-index: 100;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
 }
@@ -851,8 +883,8 @@ onMounted(async () => {
 
 .filter-item input[type="checkbox"] {
   accent-color: var(--color-teal);
-  width: 16px;
-  height: 16px;
+  width: 1rem;
+  height: 1rem;
   cursor: pointer;
 }
 
@@ -917,8 +949,8 @@ onMounted(async () => {
 }
 
 .label-dot-indicator {
-  width: 7px;
-  height: 7px;
+  width: 0.4375rem;
+  height: 0.4375rem;
   border-radius: 50%;
   opacity: 0.7;
 }
@@ -953,7 +985,7 @@ onMounted(async () => {
   border: 1px solid var(--border-light);
   border-radius: var(--radius-sm);
   padding: var(--space-xs);
-  min-width: 150px;
+  min-width: 9.375rem;
 }
 
 .ctx-option {
@@ -981,8 +1013,8 @@ onMounted(async () => {
 }
 
 .ctx-dot {
-  width: 8px;
-  height: 8px;
+  width: 0.5rem;
+  height: 0.5rem;
   border-radius: 50%;
   flex-shrink: 0;
 }
@@ -1011,8 +1043,8 @@ onMounted(async () => {
 .filter-label-dot::before {
   content: '';
   display: inline-block;
-  width: 6px;
-  height: 6px;
+  width: 0.375rem;
+  height: 0.375rem;
   border-radius: 50%;
   background: var(--lc);
   margin-right: 4px;
@@ -1053,13 +1085,13 @@ onMounted(async () => {
   border: 1px solid transparent;
   color: #444;
   font-size: var(--font-xs);
-  width: 20px;
-  height: 20px;
+  width: 1.25rem;
+  height: 1.25rem;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 3px;
+  border-radius: 0.1875rem;
   transition: color var(--speed-normal), border-color var(--speed-normal);
   opacity: 0;
 }
@@ -1224,10 +1256,10 @@ onMounted(async () => {
 
 /* Played status */
 .played-check {
-  width: 20px;
-  height: 20px;
+  width: 1.25rem;
+  height: 1.25rem;
   border: 1px solid var(--border-light);
-  border-radius: 3px;
+  border-radius: 0.1875rem;
   background: transparent;
   color: transparent;
   font-size: var(--font-xs);

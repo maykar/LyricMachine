@@ -63,8 +63,8 @@ export const api = {
   updateSong: (id, fields) => put(`/api/songs/${id}`, fields),
   deleteSong: (id) => del(`/api/songs/${id}`),
   reorderSongs: (ids) => post('/api/songs/reorder', { ids }),
-  bulkUpdate: (field, value) => post('/api/songs/bulk-update', { field, value }),
-  clearChords: () => post('/api/songs/clear-chords', {}),
+  bulkUpdate: (field, value) => put('/api/songs/bulk-update', { field, value }),
+  clearChords: () => put('/api/songs/clear-chords', {}),
   importSongs: (songs) => post('/api/import', songs),
 
   // Settings

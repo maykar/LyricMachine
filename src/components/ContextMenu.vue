@@ -1,6 +1,7 @@
 <template>
   <div
     v-if="show"
+    ref="menuRef"
     class="ctx-menu"
     :style="{ top: y + 'px', left: x + 'px' }"
     @click.stop
@@ -38,11 +39,12 @@
 </template>
 
 <script setup>
+import { ref, watch, nextTick } from 'vue'
 import MdiIcon from './MdiIcon.vue'
 import { mdiCheck, mdiPencil, mdiRefresh, mdiDelete, mdiPlaylistPlus } from '@mdi/js'
 import { LABEL_OPTIONS } from '../constants/labels.js'
 
-defineProps({
+const props = defineProps({
   show: { type: Boolean, default: false },
   x: { type: Number, default: 0 },
   y: { type: Number, default: 0 },
@@ -50,6 +52,36 @@ defineProps({
 })
 
 defineEmits(['set-label', 'toggle-played', 'edit-count', 'clear-count', 'delete', 'add-to-source', 'close'])
+
+const menuRef = ref(null)
+
+watch([() => props.show, () => props.x, () => props.y], async ([visible]) => {
+  if (!visible) return
+  await nextTick()
+  const el = menuRef.value
+  if (!el) return
+
+  // Reset any prior adjustments so we measure from the fresh x/y
+  el.style.top = `${props.y}px`
+  el.style.left = `${props.x}px`
+
+  const rect = el.getBoundingClientRect()
+  const vw = window.innerWidth
+  const vh = window.innerHeight
+
+  if (rect.bottom > vh) {
+    el.style.top = `${props.y - rect.height}px`
+  }
+  if (rect.right > vw) {
+    el.style.left = `${props.x - rect.width}px`
+  }
+  if (el.getBoundingClientRect().top < 0) {
+    el.style.top = '0px'
+  }
+  if (el.getBoundingClientRect().left < 0) {
+    el.style.left = '0px'
+  }
+})
 </script>
 
 <style scoped>
@@ -90,8 +122,8 @@ defineEmits(['set-label', 'toggle-played', 'edit-count', 'clear-count', 'delete'
 }
 
 .ctx-dot {
-  width: 8px;
-  height: 8px;
+  width: 0.5rem;
+  height: 0.5rem;
   border-radius: 50%;
   flex-shrink: 0;
 }

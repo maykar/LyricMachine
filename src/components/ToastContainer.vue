@@ -30,7 +30,7 @@ const { toasts, dismissToast } = useToast()
   flex-direction: column-reverse;
   gap: 0.5rem;
   pointer-events: none;
-  max-width: 360px;
+  max-width: 22.5rem;
 }
 
 .toast-item {

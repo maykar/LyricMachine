@@ -8,6 +8,7 @@
 html, body {
   height: 100%;
   overflow: hidden;
+  font-size: calc(100vw / 120);
   background: var(--bg-app);
   color: var(--text-primary);
   font-family: 'Inter', system-ui, -apple-system, sans-serif;

@@ -33,7 +33,7 @@
         >
           <span class="label-circle" :style="{ background: labelColor }"></span>
         </button>
-        <div v-if="showLabelMenu" class="label-menu" @click.stop>
+        <div v-if="showLabelMenu" ref="labelMenuRef" class="label-menu" @click.stop>
           <button
             v-for="opt in labelOptions" :key="opt.value"
             class="label-option"
@@ -59,11 +59,12 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, watch, nextTick } from 'vue'
 import { useEventListener } from '@vueuse/core'
 import StarButton from './StarButton.vue'
 import MdiIcon from './MdiIcon.vue'
 import { mdiMinus, mdiPlus, mdiRefresh, mdiPencil, mdiMagnify, mdiCheck, mdiClose } from '@mdi/js'
+import { adjustDropdown } from '../utils/adjustDropdown.js'
 
 const props = defineProps({
   editingLyrics: { type: Boolean, default: false },
@@ -86,6 +87,9 @@ defineEmits([
 ])
 
 const showLabelMenu = ref(false)
+const labelMenuRef = ref(null)
+
+watch(showLabelMenu, (v) => { if (v) adjustDropdown(labelMenuRef) })
 
 import { LABEL_OPTIONS } from '../constants/labels.js'
 const labelOptions = LABEL_OPTIONS
@@ -110,7 +114,7 @@ useEventListener(document, 'click', closeLabelMenu)
   gap: 0.6rem;
   background: var(--bg-surface);
   padding: 0.55rem 1rem 0.55rem 1rem;
-  border-bottom-left-radius: 10px;
+  border-bottom-left-radius: 0.625rem;
 }
 
 .top-left-group {
@@ -123,7 +127,7 @@ useEventListener(document, 'click', closeLabelMenu)
   gap: var(--space-sm);
   background: var(--bg-surface);
   padding: 0.55rem 1rem;
-  border-bottom-right-radius: 10px;
+  border-bottom-right-radius: 0.625rem;
 }
 
 .edit-action-btn {
@@ -178,8 +182,8 @@ useEventListener(document, 'click', closeLabelMenu)
 }
 
 .label-circle {
-  width: 12px;
-  height: 12px;
+  width: 0.75rem;
+  height: 0.75rem;
   border-radius: 50%;
   border: 1.5px solid rgba(255,255,255,0.15);
   transition: background var(--speed-normal);
@@ -195,7 +199,7 @@ useEventListener(document, 'click', closeLabelMenu)
   border: 1px solid var(--border-light);
   border-radius: var(--radius-sm);
   padding: var(--space-xs);
-  min-width: 160px;
+  min-width: 10rem;
   z-index: 200;
 }
 
@@ -208,7 +212,7 @@ useEventListener(document, 'click', closeLabelMenu)
   border: none;
   color: rgba(255,255,255,0.7);
   padding: 0.4rem 0.6rem;
-  border-radius: 5px;
+  border-radius: 0.3125rem;
   cursor: pointer;
   font-size: var(--font-sm);
   white-space: nowrap;
@@ -225,8 +229,8 @@ useEventListener(document, 'click', closeLabelMenu)
 }
 
 .label-dot {
-  width: 8px;
-  height: 8px;
+  width: 0.5rem;
+  height: 0.5rem;
   border-radius: 50%;
   flex-shrink: 0;
 }
@@ -238,10 +242,10 @@ useEventListener(document, 'click', closeLabelMenu)
 }
 
 .played-icon-inline {
-  width: 16px;
-  height: 16px;
+  width: 1rem;
+  height: 1rem;
   border: 1.5px solid var(--border-light);
-  border-radius: 3px;
+  border-radius: 0.1875rem;
   display: flex;
   align-items: center;
   justify-content: center;

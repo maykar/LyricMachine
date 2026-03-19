@@ -355,7 +355,7 @@ function resetTranspose() {
 }
 
 .chord-edit-name {
-  width: 110px;
+  width: 6.875rem;
   background: var(--bg-input);
   border: 1px solid var(--border);
   border-radius: var(--radius-xs);

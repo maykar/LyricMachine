@@ -13,7 +13,7 @@ LyricMachine helps musicians display song lyrics, chords, and Spotify playback d
 | Frontend | Vue 3 (`<script setup>`) + Vite 7 |
 | Backend | Express 5 (ESM Node.js) |
 | Database | SQLite (via Node.js built-in `node:sqlite`) |
-| Styling | Vanilla CSS, Inter font |
+| Styling | Vanilla CSS, Inter font, responsive rem scaling (`font-size: calc(100vw / 120)`) |
 | Icons | `@mdi/js` |
 | APIs | Spotify Web API (Authorization Code flow), lrclib.net, Ultimate Guitar (via bookmarklet) |
 
@@ -46,23 +46,24 @@ LyricMachine helps musicians display song lyrics, chords, and Spotify playback d
 │   │   └── labels.js        # Kanban label definitions (Fresh/Getting There/In Setlist)
 │   ├── utils/
 │   │   ├── normalize.js     # Re-exports shared/normalize.js
-│   │   └── titleParser.js   # Title normalization + "Artist — Track" splitting
+│   │   ├── titleParser.js   # Title normalization + "Artist — Track" splitting
+│   │   └── adjustDropdown.js# Smart dropdown/popup repositioning — keeps menus inside viewport
 │   ├── components/
 │   │   ├── TopBar.vue       # Header: font controls, edit, search, played, label, star, page indicator (lyrics page only)
 │   │   ├── LyricsDisplay.vue# Multi-column (2–3) lyrics with auto-fit font, pagination, merge, collapse repeats, alt colors, separators
-│   │   ├── LibraryOverlay.vue# Library page: search lrclib, favorites grid, drag-and-drop reorder, context menu, filters, sort, new song form
-│   │   ├── Dashboard.vue    # Home page: album art mosaic, recently added, most played, label breakdown bar
+│   │   ├── LibraryOverlay.vue# Library page: search lrclib, favorites grid (3–4 cols), drag-and-drop reorder, context menu, filters, sort, new song form
+│   │   ├── Dashboard.vue    # Home page: album art mosaic, recently added, most played (dynamic height), label breakdown bar
 │   │   ├── KanbanView.vue   # Kanban board modal for song categorization with drag-and-drop, confetti, party sound
 │   │   ├── SongRandomizer.vue# Slot-machine random song picker modal with carousel animation, celebrations
 │   │   ├── ChordDrawer.vue  # Collapsible chord chart footer with transpose, edit mode, capo display
 │   │   ├── SettingsDropdown.vue# Settings modal: defaults, Spotify connection, band name, mosaic genres, source playlist, sync, backup/restore
 │   │   ├── SpotifyPlayer.vue# Embedded Spotify player via iframe, interaction-guarded pause
-│   │   ├── ContextMenu.vue  # Right-click context menu (label/played/delete/add-to-source)
+│   │   ├── ContextMenu.vue  # Right-click context menu (label/played/delete/add-to-source) — smart viewport repositioning
 │   │   ├── NewSongForm.vue  # Manual song creation form (artist + track + lyrics)
 │   │   ├── SearchOverlay.vue# Quick single-result song search via lrclib
 │   │   ├── ToastContainer.vue# Stacked toast notifications at bottom-right with slide-in animation
 │   │   ├── StarButton.vue   # Star/unsave toggle
-│   │   └── MdiIcon.vue      # SVG icon wrapper
+│   │   └── MdiIcon.vue      # SVG icon wrapper (rem-scaled)
 │   └── composables/
 │       ├── useNavigation.js # Unified navigation: 3 pages (dashboard/library/lyrics) + modal stack (settings/kanban/randomizer)
 │       ├── useKeyboard.js   # Global keyboard shortcuts — Escape calls dismissTop(), shortcuts blocked when modal open
@@ -147,7 +148,8 @@ All state lives in `useNavigation.js`. Keyboard shortcuts in `useKeyboard.js`.
 - **Context menu** — right-click for label change, played toggle, edit play count, clear count, add to source playlist, delete
 - **Filters** — unplayed, no chords, by label, not in playlist
 - **Sort** — alphabetical, by label, or play count; ascending/descending toggle
-- **Paginated grid** — 4-column card grid with dynamic row count based on viewport
+- **Paginated grid** — 3–4 column card grid with dynamic row count based on viewport height
+- **Dynamic columns** — uses 3 columns if all items fit in one page, else 4
 - **Word-boundary truncation** — card text truncates at clean word boundaries
 
 ### Spotify Integration

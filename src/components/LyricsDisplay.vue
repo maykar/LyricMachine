@@ -463,7 +463,7 @@ defineExpose({ totalPages, currentPage, adjustFont, resetFont })
   gap: 3rem;
   height: 100%;
   line-height: 1.45;
-  padding-top: 5px;
+  padding-top: 0.3125rem;
 }
 
 .lyrics-columns.cols-3 {
@@ -486,7 +486,7 @@ defineExpose({ totalPages, currentPage, adjustFont, resetFont })
 
 .lyric-line.empty {
   height: 1px;
-  width: 60px;
+  width: 3.75rem;
   margin-left: -2rem;
   background: rgba(255, 255, 255, 0.59);
 }

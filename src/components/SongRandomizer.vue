@@ -11,7 +11,7 @@
         <button class="filter-toggle-btn" @click.stop="showFilterPanel = !showFilterPanel" title="Filters">
           <MdiIcon :path="mdiCog" :size="18" />
         </button>
-        <div v-if="showFilterPanel" class="filter-panel" @click.stop>
+        <div v-if="showFilterPanel" ref="filterPanelRef" class="filter-panel" @click.stop>
           <label class="filter-check-item">
             <input type="checkbox" value="unplayed" v-model="activeFilters" />
             <span>Unplayed</span>
@@ -131,6 +131,7 @@ import { useEventListener } from '@vueuse/core'
 import MdiIcon from './MdiIcon.vue'
 import { mdiClose, mdiCog } from '@mdi/js'
 import confettiModule from 'canvas-confetti'
+import { adjustDropdown } from '../utils/adjustDropdown.js'
 
 const props = defineProps({
   favorites: { type: Array, required: true },
@@ -142,9 +143,11 @@ const viewportRef = ref(null)
 const trackRef = ref(null)
 const confettiCanvas = ref(null)
 let fireConfetti = null
-const cardWidth = 200
-const cardGap = 12
-const cardStep = cardWidth + cardGap
+const remPx = ref(16)
+function readRem() { remPx.value = parseFloat(getComputedStyle(document.documentElement).fontSize) }
+const cardWidth = computed(() => 12.5 * remPx.value)
+const cardGap = computed(() => 0.75 * remPx.value)
+const cardStep = computed(() => cardWidth.value + cardGap.value)
 const BUFFER_CARDS = 60
 /* Spotify state lives on window so it survives component unmount/remount */
 const _sp = window.__spotify || (window.__spotify = { api: null, ctrl: null, ready: false })
@@ -176,6 +179,9 @@ import { splitTitle } from '../utils/titleParser.js'
 
 const activeFilters = ref(['unplayed'])
 const showFilterPanel = ref(false)
+const filterPanelRef = ref(null)
+
+watch(showFilterPanel, (v) => { if (v) adjustDropdown(filterPanelRef) })
 
 const filteredFavorites = computed(() => {
   if (!activeFilters.value.length) return props.favorites
@@ -327,11 +333,11 @@ function onSpinBtnUp() {
 
 function centerOffset() {
   const vw = viewportRef.value?.clientWidth || 800
-  return vw / 2 - cardWidth / 2
+  return vw / 2 - cardWidth.value / 2
 }
 
 function getOffsetForCardIndex(idx) {
-  return centerOffset() - idx * cardStep
+  return centerOffset() - idx * cardStep.value
 }
 
 function onSpinClick() {
@@ -439,7 +445,7 @@ function onSpinClick() {
       if (trackRef.value) trackRef.value.style.transform = `translateX(${currentOffset}px)`
 
       /* Tick sound when a new card crosses center */
-      const currentCenterIdx = Math.round((centerOffset() - currentOffset) / cardStep)
+      const currentCenterIdx = Math.round((centerOffset() - currentOffset) / cardStep.value)
       if (currentCenterIdx !== lastCenterCardIdx) {
         lastCenterCardIdx = currentCenterIdx
         playTick()
@@ -484,8 +490,9 @@ function land() {
   // PRE-COMPUTE centered position BEFORE setting landed
   // so the card is already at the right spot when Vue updates the DOM
   function recenterWinner() {
-    const screenCenter = window.innerWidth / 2 - cardWidth / 2
-    const winnerPos = winnerRenderIndex.value * cardStep
+    readRem()  // refresh rem so cardWidth/cardStep are current
+    const screenCenter = window.innerWidth / 2 - cardWidth.value / 2
+    const winnerPos = winnerRenderIndex.value * cardStep.value
     trackOffset.value = screenCenter - winnerPos
   }
   recenterWinner()          // set position FIRST
@@ -713,6 +720,7 @@ useEventListener(document, 'click', closeFilterPanel)
 useEventListener(document, 'keydown', onKeydown, true)
 
 onMounted(() => {
+  readRem()
   reshuffleCards()
 
   // Warm up Spotify embed so it's ready by spin time
@@ -751,7 +759,7 @@ onUnmounted(() => {
   background: var(--bg-elevated);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  width: min(92vw, 920px);
+  width: min(92vw, 57.5rem);
   padding: 2.5rem 0 2rem;
   display: flex;
   flex-direction: column;
@@ -852,7 +860,7 @@ onUnmounted(() => {
   border-radius: var(--radius-md);
   padding: var(--space-md) 0;
   z-index: 20;
-  min-width: 160px;
+  min-width: 10rem;
 }
 
 .filter-check-item {
@@ -872,16 +880,16 @@ onUnmounted(() => {
 
 .filter-check-item input[type="checkbox"] {
   accent-color: var(--color-teal);
-  width: 16px;
-  height: 16px;
+  width: 1rem;
+  height: 1rem;
   cursor: pointer;
 }
 
 .filter-label-dot::before {
   content: '';
   display: inline-block;
-  width: 8px;
-  height: 8px;
+  width: 0.5rem;
+  height: 0.5rem;
   border-radius: 50%;
   background: var(--lc);
   margin-right: 4px;
@@ -923,7 +931,7 @@ onUnmounted(() => {
 
 .carousel-track {
   display: flex;
-  gap: 12px;
+  gap: 0.75rem;
   transform: translateZ(0);
   will-change: transform;
   backface-visibility: hidden;
@@ -933,7 +941,7 @@ onUnmounted(() => {
 
 .carousel-card {
   flex-shrink: 0;
-  border-radius: 10px;
+  border-radius: 0.625rem;
   background: #1a1a1a;
   border: 1px solid #2a2a2a;
   display: flex;
@@ -953,8 +961,8 @@ onUnmounted(() => {
   position: relative;
   overflow: visible;
   box-shadow: 0 0 24px rgba(245, 197, 66, 0.25), 0 0 60px rgba(245, 197, 66, 0.05), 0 20px 60px rgba(0, 0, 0, 0.7);
-  margin-left: -100px;
-  margin-right: -100px;
+  margin-left: -6.25rem;
+  margin-right: -6.25rem;
 }
 
 .carousel-card.is-winner:hover {
@@ -978,7 +986,7 @@ onUnmounted(() => {
 .noise-overlay {
   position: absolute;
   inset: 0;
-  border-radius: 10px;
+  border-radius: 0.625rem;
   pointer-events: none;
   z-index: 5;
   opacity: 0.04;
@@ -993,7 +1001,7 @@ onUnmounted(() => {
 .shimmer-overlay {
   position: absolute;
   inset: 0;
-  border-radius: 10px;
+  border-radius: 0.625rem;
   pointer-events: none;
   z-index: 3;
   mix-blend-mode: color-dodge;
@@ -1010,7 +1018,7 @@ onUnmounted(() => {
 .pulse-ring {
   position: absolute;
   inset: -8px;
-  border-radius: 16px;
+  border-radius: 1rem;
   border: 2px solid rgba(245, 197, 66, 0.4);
   pointer-events: none;
   z-index: 1;
@@ -1138,7 +1146,7 @@ onUnmounted(() => {
   flex-direction: column;
   align-items: center;
   gap: 0.4rem;
-  padding: 15px;
+  padding: 0.9375rem;
   min-width: 0;
   width: 100%;
   height: 100%;
@@ -1147,7 +1155,7 @@ onUnmounted(() => {
 .carousel-card-art {
   width: 100%;
   aspect-ratio: 1;
-  border-radius: 6px;
+  border-radius: 0.375rem;
   object-fit: cover;
   flex-shrink: 0;
   position: relative;
@@ -1171,7 +1179,7 @@ onUnmounted(() => {
   text-overflow: ellipsis;
   white-space: nowrap;
   max-width: 100%;
-  padding-top: 10px;
+  padding-top: 0.625rem;
 }
 
 .carousel-card-track {
@@ -1188,7 +1196,7 @@ onUnmounted(() => {
 .spin-btn {
   margin-top: auto;
   padding: 0.85rem 3.5rem;
-  min-width: 180px;
+  min-width: 11.25rem;
   font-size: 1.1rem;
   font-weight: 600;
   font-family: inherit;
@@ -1196,7 +1204,7 @@ onUnmounted(() => {
   background: #1a1a1a;
   color: rgba(255, 255, 255, 0.7);
   border: 1px solid #333;
-  border-radius: 10px;
+  border-radius: 0.625rem;
   cursor: pointer;
   transition: all 0.2s;
 }

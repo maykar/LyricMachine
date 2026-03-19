@@ -64,7 +64,7 @@ defineExpose({ pauseIfPlaying })
 }
 
 .spotify-player.open {
-  height: 105px;
+  height: 6.5625rem;
   border-top: 1px solid var(--border);
 }
 

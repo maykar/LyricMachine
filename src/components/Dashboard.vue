@@ -56,10 +56,10 @@
     </div>
 
     <!-- Two-column section: Recently Added + Most Played -->
-    <div class="dashboard-columns" v-if="totalSongs > 0">
+    <div class="dashboard-columns" v-if="totalSongs > 0" ref="dashColsRef">
       <div class="dashboard-section">
         <h3 class="section-title">Recently Added</h3>
-        <div class="song-list">
+        <div class="song-list slim-scrollbar" :style="songListStyle">
           <div
             v-for="song in recentlyAdded"
             :key="'r-' + song.title"
@@ -77,7 +77,7 @@
       </div>
       <div class="dashboard-section">
         <h3 class="section-title">Most Played</h3>
-        <div class="song-list">
+        <div class="song-list slim-scrollbar" :style="songListStyle">
           <div
             v-for="song in mostPlayed"
             :key="'m-' + song.title"
@@ -138,16 +138,42 @@ const labelSegments = computed(() => {
     }))
 })
 
+const MAX_SONG_ITEMS = 10
+
 const recentlyAdded = computed(() => {
-  return [...props.favorites].reverse().slice(0, 6)
+  return [...props.favorites].reverse().slice(0, MAX_SONG_ITEMS)
 })
 
 const mostPlayed = computed(() => {
   return [...props.favorites]
     .filter(f => (f.playCount || 0) > 0)
     .sort((a, b) => (b.playCount || 0) - (a.playCount || 0))
-    .slice(0, 6)
+    .slice(0, MAX_SONG_ITEMS)
 })
+
+const dashColsRef = ref(null)
+const songListMaxHeight = ref('none')
+
+function recalcDashboard() {
+  const el = dashColsRef.value
+  if (!el) return
+  const card = el.querySelector('.song-card')
+  if (!card) return
+  const cardH = card.getBoundingClientRect().height
+  const songList = el.querySelector('.song-list')
+  if (!songList) return
+  const gapH = parseFloat(getComputedStyle(songList).gap) || 0
+  const listTop = songList.getBoundingClientRect().top
+  const available = window.innerHeight - listTop
+  const step = cardH + gapH
+  const count = Math.max(3, Math.floor((available + gapH) / step))
+  songListMaxHeight.value = `${Math.ceil(count * step - gapH)}px`
+}
+
+const songListStyle = computed(() => ({
+  maxHeight: songListMaxHeight.value,
+  overflowY: songListMaxHeight.value !== 'none' ? 'auto' : undefined,
+}))
 
 // Extract the unique image identifier from a URL for dedup.
 // Spotify CDN URLs look like https://i.scdn.co/image/ab67616d0000b273HASH —
@@ -309,6 +335,20 @@ onMounted(() => {
       .then(data => { placeholderArts.value = data?.arts || [] })
       .catch(() => { placeholdersFetched = false }) // retry on failure
   }
+
+  // Set up dashboard song list sizing when the element becomes available
+  // (it's behind v-if="totalSongs > 0" so it may not exist on mount)
+  let dashRo = null
+  watch(dashColsRef, (el) => {
+    if (dashRo) { dashRo.disconnect(); dashRo = null }
+    if (!el) return
+    nextTick(() => recalcDashboard())
+    dashRo = new ResizeObserver(() => recalcDashboard())
+    dashRo.observe(el)
+  })
+  // Recalculate when favorites change (cards may appear/disappear)
+  watch(() => props.favorites.length, () => nextTick(() => recalcDashboard()))
+  onUnmounted(() => { if (dashRo) dashRo.disconnect() })
 })
 
 onUnmounted(() => {
@@ -322,7 +362,7 @@ onUnmounted(() => {
   flex-direction: column;
   align-items: center;
   height: 100%;
-  padding: 2rem 3rem;
+  padding: 2rem 3rem 0;
   gap: 1.5rem;
   overflow-y: auto;
   position: relative;
@@ -341,8 +381,8 @@ onUnmounted(() => {
   background: rgba(255, 255, 255, 0.08);
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 50%;
-  width: 44px;
-  height: 44px;
+  width: 2.75rem;
+  height: 2.75rem;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -450,7 +490,7 @@ onUnmounted(() => {
   display: flex;
   gap: 1.5rem;
   width: 100%;
-  max-width: 1100px;
+  max-width: 68.75rem;
 }
 
 .stat-card {
@@ -462,7 +502,7 @@ onUnmounted(() => {
   padding: 1.25rem 1rem;
   background: rgba(0, 0, 0, 0.35);
   border: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: 12px;
+  border-radius: 0.75rem;
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
   transition: border-color var(--speed-normal), background var(--speed-normal);
@@ -491,15 +531,15 @@ onUnmounted(() => {
 /* Label Breakdown */
 .label-bar-wrap {
   width: 100%;
-  max-width: 1100px;
+  max-width: 68.75rem;
   cursor: pointer;
 }
 
 .label-bar {
-  margin: 20px 0;
+  margin: 1.25rem 0;
   display: flex;
-  height: 15px;
-  border-radius: 3px;
+  height: 0.9375rem;
+  border-radius: 0.1875rem;
   overflow: hidden;
   background: rgba(255, 255, 255, 0.05);
 }
@@ -524,8 +564,8 @@ onUnmounted(() => {
 }
 
 .legend-dot {
-  width: 8px;
-  height: 8px;
+  width: 0.5rem;
+  height: 0.5rem;
   border-radius: 50%;
 }
 
@@ -534,7 +574,7 @@ onUnmounted(() => {
   display: flex;
   gap: 2rem;
   width: 100%;
-  max-width: 1100px;
+  max-width: 68.75rem;
   flex: 1;
   min-height: 0;
 }
@@ -560,6 +600,7 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
+  padding-right: 0.5rem;
 }
 
 .song-card {
@@ -569,7 +610,7 @@ onUnmounted(() => {
   padding: 0.75rem 1rem;
   background: rgba(0, 0, 0, 0.35);
   border: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: 8px;
+  border-radius: 0.5rem;
   cursor: pointer;
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
@@ -582,17 +623,17 @@ onUnmounted(() => {
 }
 
 .song-art {
-  width: 48px;
-  height: 48px;
-  border-radius: 4px;
+  width: 3rem;
+  height: 3rem;
+  border-radius: 0.25rem;
   object-fit: cover;
   flex-shrink: 0;
 }
 
 .song-art-placeholder {
-  width: 48px;
-  height: 48px;
-  border-radius: 4px;
+  width: 3rem;
+  height: 3rem;
+  border-radius: 0.25rem;
   background: rgba(255, 255, 255, 0.05);
   display: flex;
   align-items: center;

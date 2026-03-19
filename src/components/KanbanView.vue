@@ -201,8 +201,8 @@ onUnmounted(() => {
 
 .kanban-panel {
   background: var(--bg-app);
-  width: calc(100vw - 40px);
-  height: calc(100vh - 40px);
+  width: calc(100vw - 2.5rem);
+  height: calc(100vh - 2.5rem);
   display: flex;
   flex-direction: column;
   padding: 1.5rem;
@@ -309,7 +309,7 @@ onUnmounted(() => {
 }
 
 .kanban-col-body::-webkit-scrollbar {
-  width: 6px;
+  width: 0.375rem;
 }
 
 .kanban-col-body::-webkit-scrollbar-track {
@@ -318,7 +318,7 @@ onUnmounted(() => {
 
 .kanban-col-body::-webkit-scrollbar-thumb {
   background: var(--border-light);
-  border-radius: 3px;
+  border-radius: 0.1875rem;
 }
 
 .kanban-col-body::-webkit-scrollbar-thumb:hover {

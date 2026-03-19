@@ -1,7 +1,7 @@
 <template>
   <svg
-    :width="size"
-    :height="size"
+    :width="remSize"
+    :height="remSize"
     viewBox="0 0 24 24"
     class="mdi-icon"
   >
@@ -10,10 +10,14 @@
 </template>
 
 <script setup>
-defineProps({
+import { computed } from 'vue'
+
+const props = defineProps({
   path: { type: String, required: true },
   size: { type: [Number, String], default: 20 },
 })
+
+const remSize = computed(() => `${Number(props.size) / 16}rem`)
 </script>
 
 <style scoped>

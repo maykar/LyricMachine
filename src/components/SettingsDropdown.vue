@@ -320,7 +320,7 @@ onMounted(async () => {
 <style scoped>
 .settings-modal {
   padding: 2rem 2rem 1.5rem;
-  max-width: 850px;
+  max-width: 53.125rem;
   width: 90vw;
 }
 
@@ -372,8 +372,8 @@ onMounted(async () => {
 }
 
 .setting-row input[type="checkbox"] {
-  width: 16px;
-  height: 16px;
+  width: 1rem;
+  height: 1rem;
   accent-color: var(--accent);
   cursor: pointer;
 }
