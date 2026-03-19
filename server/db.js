@@ -1,15 +1,39 @@
 import { DatabaseSync } from 'node:sqlite'
-import { mkdirSync } from 'node:fs'
+import { mkdirSync, copyFileSync, readdirSync, unlinkSync, existsSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const DATA_DIR = join(__dirname, 'data')
+const BACKUP_DIR = join(DATA_DIR, 'backups')
+const DB_PATH = join(DATA_DIR, 'lyricmachine.db')
+const MAX_BACKUPS = 10
 
-// Ensure data directory exists
+// Ensure data + backup directories exist
 mkdirSync(DATA_DIR, { recursive: true })
+mkdirSync(BACKUP_DIR, { recursive: true })
 
-const db = new DatabaseSync(join(DATA_DIR, 'lyricmachine.db'))
+// --- Auto-backup on startup ---
+if (existsSync(DB_PATH)) {
+  try {
+    const ts = new Date().toISOString().replace(/[:.]/g, '-')
+    const backupPath = join(BACKUP_DIR, `lyricmachine-${ts}.db`)
+    copyFileSync(DB_PATH, backupPath)
+
+    // Rotate: keep only the newest MAX_BACKUPS
+    const files = readdirSync(BACKUP_DIR)
+      .filter(f => f.startsWith('lyricmachine-') && f.endsWith('.db'))
+      .sort()
+    while (files.length > MAX_BACKUPS) {
+      unlinkSync(join(BACKUP_DIR, files.shift()))
+    }
+    console.log(`DB backup: ${backupPath}`)
+  } catch (err) {
+    console.warn('DB backup failed:', err.message)
+  }
+}
+
+const db = new DatabaseSync(DB_PATH)
 
 // --- Schema ---
 db.exec(`

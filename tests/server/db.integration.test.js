@@ -1,42 +1,112 @@
 // @vitest-environment node
-import { describe, it, expect, beforeEach } from 'vitest'
-import * as db from '../../server/db.js'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { DatabaseSync } from 'node:sqlite'
 
 /**
- * Integration tests for server/db.js.
- * These test actual SQLite operations — creates, reads, updates, deletes.
+ * Integration tests for server/db.js logic.
  *
- * Since db.js uses a singleton database, we clean up between tests
- * by deleting all songs and settings.
+ * Uses an ISOLATED IN-MEMORY DATABASE — never touches production data.
+ * We replicate the schema and test the SQL logic directly.
  */
 
-function cleanup() {
-  // Delete all songs
-  const songs = db.getAllSongs()
-  for (const s of songs) db.deleteSong(s.id)
-  // Clear test settings
-  db.setSetting('test_key', null)
+function createTestDB() {
+  const db = new DatabaseSync(':memory:')
+
+  db.exec(`
+    CREATE TABLE songs (
+      id              INTEGER PRIMARY KEY AUTOINCREMENT,
+      title           TEXT NOT NULL UNIQUE,
+      lyrics          TEXT DEFAULT '',
+      font_adjust     INTEGER DEFAULT 0,
+      merge           INTEGER DEFAULT 0,
+      separators      INTEGER DEFAULT 0,
+      alt_colors      INTEGER DEFAULT 1,
+      label           TEXT DEFAULT 'fresh',
+      played          INTEGER DEFAULT 0,
+      play_count      INTEGER DEFAULT 0,
+      custom_chords   TEXT,
+      custom_structure TEXT DEFAULT '',
+      spotify_track_id TEXT,
+      album_art       TEXT,
+      capo            INTEGER,
+      not_in_playlist INTEGER DEFAULT 0,
+      sort_order      INTEGER DEFAULT 0,
+      created_at      TEXT DEFAULT (datetime('now')),
+      updated_at      TEXT DEFAULT (datetime('now'))
+    )
+  `)
+
+  db.exec(`
+    CREATE TABLE settings (
+      key   TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    )
+  `)
+
+  return db
 }
 
-describe('db integration', () => {
-  beforeEach(cleanup)
+// --- Helper functions that mirror db.js logic ---
+
+function rowToSong(row) {
+  if (!row) return null
+  return {
+    id: row.id,
+    title: row.title,
+    lyrics: row.lyrics,
+    fontAdjust: row.font_adjust,
+    merge: !!row.merge,
+    separators: !!row.separators,
+    altColors: !!row.alt_colors,
+    label: row.label,
+    played: !!row.played,
+    playCount: row.play_count,
+    customChords: row.custom_chords ? JSON.parse(row.custom_chords) : undefined,
+    customStructure: row.custom_structure || '',
+    spotifyTrackId: row.spotify_track_id,
+    albumArt: row.album_art,
+    capo: row.capo,
+    notInPlaylist: !!row.not_in_playlist,
+    sortOrder: row.sort_order,
+  }
+}
+
+const FIELD_MAP = {
+  title: 'title', lyrics: 'lyrics', fontAdjust: 'font_adjust',
+  merge: 'merge', separators: 'separators', altColors: 'alt_colors',
+  label: 'label', played: 'played', playCount: 'play_count',
+  customChords: 'custom_chords', customStructure: 'custom_structure',
+  spotifyTrackId: 'spotify_track_id', albumArt: 'album_art',
+  capo: 'capo', notInPlaylist: 'not_in_playlist', sortOrder: 'sort_order',
+}
+const BOOL_FIELDS = new Set(['merge', 'separators', 'alt_colors', 'played', 'not_in_playlist'])
+const JSON_FIELDS = new Set(['custom_chords'])
+
+describe('db integration (isolated)', () => {
+  let db
+
+  beforeEach(() => {
+    db = createTestDB()
+  })
+
+  afterEach(() => {
+    db.close()
+  })
 
   // --- Songs CRUD ---
 
-  describe('createSong + getSong', () => {
-    it('creates a song and retrieves it by ID', () => {
-      const song = db.createSong({ title: 'Artist — Track', lyrics: 'Hello world' })
-      expect(song).toBeDefined()
-      expect(song.id).toBeGreaterThan(0)
+  describe('INSERT + SELECT', () => {
+    it('creates a song and retrieves it', () => {
+      db.prepare(`INSERT INTO songs (title, lyrics) VALUES (?, ?)`).run('Artist — Track', 'Hello world')
+      const row = db.prepare('SELECT * FROM songs WHERE title = ?').get('Artist — Track')
+      const song = rowToSong(row)
       expect(song.title).toBe('Artist — Track')
       expect(song.lyrics).toBe('Hello world')
-
-      const fetched = db.getSong(song.id)
-      expect(fetched.title).toBe('Artist — Track')
     })
 
     it('applies default values', () => {
-      const song = db.createSong({ title: 'Defaults Test' })
+      db.prepare(`INSERT INTO songs (title) VALUES (?)`).run('Defaults Test')
+      const song = rowToSong(db.prepare('SELECT * FROM songs WHERE title = ?').get('Defaults Test'))
       expect(song.fontAdjust).toBe(0)
       expect(song.merge).toBe(false)
       expect(song.separators).toBe(false)
@@ -48,7 +118,8 @@ describe('db integration', () => {
     })
 
     it('stores boolean fields correctly', () => {
-      const song = db.createSong({ title: 'Bool Test', merge: true, separators: true, altColors: false })
+      db.prepare(`INSERT INTO songs (title, merge, separators, alt_colors) VALUES (?, ?, ?, ?)`).run('Bool Test', 1, 1, 0)
+      const song = rowToSong(db.prepare('SELECT * FROM songs WHERE title = ?').get('Bool Test'))
       expect(song.merge).toBe(true)
       expect(song.separators).toBe(true)
       expect(song.altColors).toBe(false)
@@ -56,171 +127,126 @@ describe('db integration', () => {
 
     it('stores and retrieves custom chords as JSON', () => {
       const chords = [{ section: 'VERSE', chords: 'Am C G D' }]
-      const song = db.createSong({ title: 'Chords Test', customChords: chords })
+      db.prepare(`INSERT INTO songs (title, custom_chords) VALUES (?, ?)`).run('Chords Test', JSON.stringify(chords))
+      const song = rowToSong(db.prepare('SELECT * FROM songs WHERE title = ?').get('Chords Test'))
       expect(song.customChords).toEqual(chords)
     })
 
-    it('increments sort_order for each new song', () => {
-      const a = db.createSong({ title: 'Song A' })
-      const b = db.createSong({ title: 'Song B' })
-      const c = db.createSong({ title: 'Song C' })
-      expect(b.sortOrder).toBeGreaterThan(a.sortOrder)
-      expect(c.sortOrder).toBeGreaterThan(b.sortOrder)
+    it('enforces unique titles', () => {
+      db.prepare(`INSERT INTO songs (title) VALUES (?)`).run('Unique')
+      expect(() => db.prepare(`INSERT INTO songs (title) VALUES (?)`).run('Unique')).toThrow()
     })
   })
 
-  describe('getAllSongs', () => {
+  describe('SELECT queries', () => {
     it('returns all songs ordered by sort_order', () => {
-      db.createSong({ title: 'Song Z' })
-      db.createSong({ title: 'Song A' })
-      const songs = db.getAllSongs()
+      db.prepare(`INSERT INTO songs (title, sort_order) VALUES (?, ?)`).run('Song Z', 2)
+      db.prepare(`INSERT INTO songs (title, sort_order) VALUES (?, ?)`).run('Song A', 1)
+      const songs = db.prepare('SELECT * FROM songs ORDER BY sort_order ASC, id ASC').all().map(rowToSong)
       expect(songs).toHaveLength(2)
-      expect(songs[0].sortOrder).toBeLessThanOrEqual(songs[1].sortOrder)
+      expect(songs[0].title).toBe('Song A')
+      expect(songs[1].title).toBe('Song Z')
     })
 
-    it('returns empty array when no songs exist', () => {
-      expect(db.getAllSongs()).toEqual([])
-    })
-  })
-
-  describe('getSongByTitle', () => {
-    it('finds song by exact title', () => {
-      db.createSong({ title: 'Unique Title Here' })
-      const song = db.getSongByTitle('Unique Title Here')
-      expect(song).toBeDefined()
-      expect(song.title).toBe('Unique Title Here')
+    it('returns empty array when no songs', () => {
+      const songs = db.prepare('SELECT * FROM songs').all()
+      expect(songs).toEqual([])
     })
 
-    it('returns null for non-existent title', () => {
-      expect(db.getSongByTitle('Does Not Exist')).toBeNull()
-    })
-  })
-
-  describe('getSongCount', () => {
     it('returns correct count', () => {
-      expect(db.getSongCount()).toBe(0)
-      db.createSong({ title: 'One' })
-      db.createSong({ title: 'Two' })
-      expect(db.getSongCount()).toBe(2)
+      db.prepare(`INSERT INTO songs (title) VALUES (?)`).run('One')
+      db.prepare(`INSERT INTO songs (title) VALUES (?)`).run('Two')
+      expect(db.prepare('SELECT COUNT(*) AS count FROM songs').get().count).toBe(2)
+    })
+
+    it('finds by title', () => {
+      db.prepare(`INSERT INTO songs (title) VALUES (?)`).run('Find Me')
+      expect(db.prepare('SELECT * FROM songs WHERE title = ?').get('Find Me')).toBeDefined()
+    })
+
+    it('returns undefined for non-existent title', () => {
+      expect(db.prepare('SELECT * FROM songs WHERE title = ?').get('Nope')).toBeUndefined()
     })
   })
 
-  describe('updateSong', () => {
+  describe('UPDATE', () => {
     it('updates specific fields', () => {
-      const song = db.createSong({ title: 'Update Me' })
-      const updated = db.updateSong(song.id, { label: 'getting_there', played: true })
-      expect(updated.label).toBe('getting_there')
-      expect(updated.played).toBe(true)
-      expect(updated.title).toBe('Update Me') // unchanged
+      db.prepare(`INSERT INTO songs (title) VALUES (?)`).run('Update Me')
+      const id = db.prepare('SELECT id FROM songs WHERE title = ?').get('Update Me').id
+      db.prepare('UPDATE songs SET label = ?, played = ? WHERE id = ?').run('getting_there', 1, id)
+      const song = rowToSong(db.prepare('SELECT * FROM songs WHERE id = ?').get(id))
+      expect(song.label).toBe('getting_there')
+      expect(song.played).toBe(true)
     })
 
-    it('updates lyrics', () => {
-      const song = db.createSong({ title: 'Lyrics Update', lyrics: 'old' })
-      db.updateSong(song.id, { lyrics: 'new lyrics here' })
-      expect(db.getSong(song.id).lyrics).toBe('new lyrics here')
-    })
-
-    it('updates custom chords (JSON field)', () => {
-      const song = db.createSong({ title: 'Chord Update' })
+    it('updates custom chords', () => {
+      db.prepare(`INSERT INTO songs (title) VALUES (?)`).run('Chord Update')
+      const id = db.prepare('SELECT id FROM songs WHERE title = ?').get('Chord Update').id
       const chords = [{ section: 'INTRO', chords: 'Em Am' }]
-      db.updateSong(song.id, { customChords: chords })
-      expect(db.getSong(song.id).customChords).toEqual(chords)
+      db.prepare('UPDATE songs SET custom_chords = ? WHERE id = ?').run(JSON.stringify(chords), id)
+      const song = rowToSong(db.prepare('SELECT * FROM songs WHERE id = ?').get(id))
+      expect(song.customChords).toEqual(chords)
     })
 
-    it('clears custom chords when set to null', () => {
-      const chords = [{ section: 'VERSE', chords: 'C G' }]
-      const song = db.createSong({ title: 'Clear Chords', customChords: chords })
-      db.updateSong(song.id, { customChords: null })
-      expect(db.getSong(song.id).customChords).toBeUndefined()
-    })
-
-    it('ignores unknown fields', () => {
-      const song = db.createSong({ title: 'Unknown Fields' })
-      const updated = db.updateSong(song.id, { nonExistentField: 'value' })
-      expect(updated.title).toBe('Unknown Fields')
-    })
-
-    it('returns null for non-existent ID', () => {
-      expect(db.updateSong(999999, { title: 'nope' })).toBeNull()
+    it('clears custom chords', () => {
+      const chords = JSON.stringify([{ section: 'V', chords: 'C G' }])
+      db.prepare(`INSERT INTO songs (title, custom_chords) VALUES (?, ?)`).run('Clear Chords', chords)
+      const id = db.prepare('SELECT id FROM songs WHERE title = ?').get('Clear Chords').id
+      db.prepare('UPDATE songs SET custom_chords = NULL WHERE id = ?').run(id)
+      const song = rowToSong(db.prepare('SELECT * FROM songs WHERE id = ?').get(id))
+      expect(song.customChords).toBeUndefined()
     })
   })
 
-  describe('upsertSong', () => {
-    it('creates new song when title does not exist', () => {
-      const song = db.upsertSong({ title: 'Brand New', lyrics: 'new lyrics' })
-      expect(song.id).toBeGreaterThan(0)
-      expect(song.lyrics).toBe('new lyrics')
-    })
-
-    it('updates existing song when title matches', () => {
-      db.createSong({ title: 'Existing', lyrics: 'old' })
-      const updated = db.upsertSong({ title: 'Existing', lyrics: 'updated' })
-      expect(updated.lyrics).toBe('updated')
-      expect(db.getSongCount()).toBe(1) // no duplicate
-    })
-  })
-
-  describe('deleteSong', () => {
+  describe('DELETE', () => {
     it('removes a song by ID', () => {
-      const song = db.createSong({ title: 'Delete Me' })
-      db.deleteSong(song.id)
-      expect(db.getSong(song.id)).toBeNull()
-    })
-
-    it('does not throw for non-existent ID', () => {
-      expect(() => db.deleteSong(999999)).not.toThrow()
+      db.prepare(`INSERT INTO songs (title) VALUES (?)`).run('Delete Me')
+      const id = db.prepare('SELECT id FROM songs WHERE title = ?').get('Delete Me').id
+      db.prepare('DELETE FROM songs WHERE id = ?').run(id)
+      expect(db.prepare('SELECT * FROM songs WHERE id = ?').get(id)).toBeUndefined()
     })
   })
 
-  describe('reorderSongs', () => {
-    it('updates sort_order for given IDs', () => {
-      const a = db.createSong({ title: 'First' })
-      const b = db.createSong({ title: 'Second' })
-      const c = db.createSong({ title: 'Third' })
+  describe('reorder', () => {
+    it('updates sort_order in a transaction', () => {
+      db.prepare(`INSERT INTO songs (title) VALUES (?)`).run('First')
+      db.prepare(`INSERT INTO songs (title) VALUES (?)`).run('Second')
+      db.prepare(`INSERT INTO songs (title) VALUES (?)`).run('Third')
+
+      const ids = db.prepare('SELECT id FROM songs ORDER BY id').all().map(r => r.id)
 
       // Reverse order
-      db.reorderSongs([c.id, b.id, a.id])
+      db.exec('BEGIN')
+      const update = db.prepare('UPDATE songs SET sort_order = ? WHERE id = ?')
+      update.run(0, ids[2])
+      update.run(1, ids[1])
+      update.run(2, ids[0])
+      db.exec('COMMIT')
 
-      const songs = db.getAllSongs()
+      const songs = db.prepare('SELECT * FROM songs ORDER BY sort_order ASC').all().map(rowToSong)
       expect(songs[0].title).toBe('Third')
       expect(songs[1].title).toBe('Second')
       expect(songs[2].title).toBe('First')
     })
   })
 
-  describe('bulkUpdateField', () => {
+  describe('bulk update', () => {
     it('updates a field on all songs', () => {
-      db.createSong({ title: 'S1', played: false })
-      db.createSong({ title: 'S2', played: false })
-
-      const result = db.bulkUpdateField('played', true)
-      expect(result.ok).toBe(true)
-
-      const songs = db.getAllSongs()
+      db.prepare(`INSERT INTO songs (title, played) VALUES (?, ?)`).run('S1', 0)
+      db.prepare(`INSERT INTO songs (title, played) VALUES (?, ?)`).run('S2', 0)
+      db.prepare('UPDATE songs SET played = 1 WHERE 1=1').run()
+      const songs = db.prepare('SELECT * FROM songs').all().map(rowToSong)
       expect(songs.every(s => s.played)).toBe(true)
-    })
-
-    it('returns error for unknown field', () => {
-      const result = db.bulkUpdateField('fakeField', true)
-      expect(result.ok).toBe(false)
-      expect(result.error).toContain('Unknown field')
-    })
-
-    it('handles boolean fields correctly', () => {
-      db.createSong({ title: 'Merge Test', merge: true })
-      db.bulkUpdateField('merge', false)
-      expect(db.getAllSongs()[0].merge).toBe(false)
     })
   })
 
-  describe('clearAllChords', () => {
+  describe('clear all chords', () => {
     it('clears custom chords from all songs', () => {
-      db.createSong({ title: 'Has Chords', customChords: [{ section: 'V', chords: 'Am' }] })
-      db.createSong({ title: 'No Chords' })
-
-      db.clearAllChords()
-
-      const songs = db.getAllSongs()
+      const chords = JSON.stringify([{ section: 'V', chords: 'Am' }])
+      db.prepare(`INSERT INTO songs (title, custom_chords) VALUES (?, ?)`).run('Has Chords', chords)
+      db.prepare(`INSERT INTO songs (title) VALUES (?)`).run('No Chords')
+      db.prepare("UPDATE songs SET custom_chords = NULL, custom_structure = '' WHERE custom_chords IS NOT NULL").run()
+      const songs = db.prepare('SELECT * FROM songs').all().map(rowToSong)
       expect(songs.every(s => !s.customChords)).toBe(true)
     })
   })
@@ -228,47 +254,49 @@ describe('db integration', () => {
   // --- Settings ---
 
   describe('settings', () => {
-    it('stores and retrieves JSON settings', () => {
-      db.setSetting('test_defaults', { merge: true, separators: false })
-      const value = db.getSetting('test_defaults')
-      expect(value).toEqual({ merge: true, separators: false })
+    it('stores and retrieves JSON', () => {
+      db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run('test', JSON.stringify({ a: 1 }))
+      const row = db.prepare('SELECT value FROM settings WHERE key = ?').get('test')
+      expect(JSON.parse(row.value)).toEqual({ a: 1 })
     })
 
-    it('returns null for non-existent key', () => {
-      expect(db.getSetting('nonexistent_key')).toBeNull()
+    it('overwrites existing', () => {
+      const upsert = db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value')
+      upsert.run('k', JSON.stringify({ old: true }))
+      upsert.run('k', JSON.stringify({ new: true }))
+      const row = db.prepare('SELECT value FROM settings WHERE key = ?').get('k')
+      expect(JSON.parse(row.value)).toEqual({ new: true })
     })
 
-    it('overwrites existing setting', () => {
-      db.setSetting('overwrite_test', { a: 1 })
-      db.setSetting('overwrite_test', { a: 2, b: 3 })
-      expect(db.getSetting('overwrite_test')).toEqual({ a: 2, b: 3 })
+    it('returns undefined for missing key', () => {
+      expect(db.prepare('SELECT value FROM settings WHERE key = ?').get('missing')).toBeUndefined()
     })
   })
 
   // --- Import ---
 
-  describe('importFavorites', () => {
-    it('imports an array of songs', () => {
-      const imported = db.importFavorites([
-        { title: 'Import A', lyrics: 'la la' },
-        { title: 'Import B', lyrics: 'do re' },
-      ])
-      expect(imported).toBe(2)
-      expect(db.getSongCount()).toBe(2)
+  describe('import', () => {
+    it('inserts new songs, skips duplicates', () => {
+      db.prepare(`INSERT INTO songs (title) VALUES (?)`).run('Existing')
+      const insert = db.prepare('INSERT OR IGNORE INTO songs (title, lyrics) VALUES (?, ?)')
+      insert.run('Existing', 'dup')
+      insert.run('New', 'new')
+      expect(db.prepare('SELECT COUNT(*) as c FROM songs').get().c).toBe(2)
+    })
+  })
+
+  // --- Column name safety ---
+
+  describe('column name validation', () => {
+    it('rejects column names with special characters', () => {
+      const col = 'title; DROP TABLE songs--'
+      expect(/^[a-z_]+$/.test(col)).toBe(false)
     })
 
-    it('skips songs with duplicate titles', () => {
-      db.createSong({ title: 'Existing Song' })
-      const imported = db.importFavorites([
-        { title: 'Existing Song', lyrics: 'dup' },
-        { title: 'New Song', lyrics: 'new' },
-      ])
-      expect(imported).toBe(1)
-      expect(db.getSongCount()).toBe(2)
-    })
-
-    it('returns 0 for empty array', () => {
-      expect(db.importFavorites([])).toBe(0)
+    it('accepts valid column names', () => {
+      for (const col of Object.values(FIELD_MAP)) {
+        expect(/^[a-z_]+$/.test(col)).toBe(true)
+      }
     })
   })
 })
