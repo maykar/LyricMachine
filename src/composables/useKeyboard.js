@@ -1,4 +1,5 @@
 import { useEventListener } from '@vueuse/core'
+import { api } from '../api.js'
 
 /**
  * Global keyboard shortcuts.
@@ -61,7 +62,7 @@ export function useKeyboard({
       case 't':
       case 'T':
         if (page.value === 'lyrics') {
-          fetch(`/api/open-ug?q=${encodeURIComponent(currentTitle.value)}`)
+          api.openUG(currentTitle.value)
           startUGImportPoll()
         }
         break

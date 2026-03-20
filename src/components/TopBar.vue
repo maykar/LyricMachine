@@ -152,7 +152,7 @@ useEventListener(document, 'click', closeLabelMenu)
 }
 
 .edit-action-btn.save:hover {
-  color: #27ae60;
+  color: var(--color-success);
 }
 
 .edit-action-btn.cancel {

@@ -9,11 +9,44 @@ import { useToast } from './composables/useToast.js'
 
 const { showToast } = useToast()
 
+// --- API token management ---
+let _apiToken = null
+let _tokenPromise = null
+
+async function getToken() {
+  if (_apiToken) return _apiToken
+  if (_tokenPromise) return _tokenPromise
+  _tokenPromise = fetch('/api/auth/token')
+    .then(res => res.ok ? res.json() : null)
+    .then(data => { _apiToken = data?.token || null; return _apiToken })
+    .catch(() => null)
+    .finally(() => { _tokenPromise = null })
+  return _tokenPromise
+}
+
 // --- Internal helpers ---
 
 async function request(url, options = {}) {
   try {
-    const res = await fetch(url, options)
+    // Inject auth token
+    const token = await getToken()
+    if (token) {
+      options.headers = { ...options.headers, Authorization: `Bearer ${token}` }
+    }
+
+    let res = await fetch(url, options)
+
+    // If 401, the cached token may be stale (e.g. server restarted).
+    // Clear it, re-fetch, and retry once.
+    if (res.status === 401 && _apiToken) {
+      _apiToken = null
+      const freshToken = await getToken()
+      if (freshToken) {
+        options.headers = { ...options.headers, Authorization: `Bearer ${freshToken}` }
+        res = await fetch(url, options)
+      }
+    }
+
     if (!res.ok) {
       const text = await res.text().catch(() => res.statusText)
       console.error(`API ${options.method || 'GET'} ${url} failed (${res.status}):`, text)
@@ -77,6 +110,8 @@ export const api = {
 
   // Spotify
   getSpotifyStatus: () => get('/api/spotify/status'),
+  getSpotifyId: (artist, track) =>
+    get(`/api/spotify-id?artist=${encodeURIComponent(artist)}&track=${encodeURIComponent(track)}`),
   disconnectSpotify: () => post('/api/spotify/disconnect', {}),
   getSpotifyPlaylists: () => get('/api/spotify/playlists'),
   syncSpotify: () => post('/api/spotify/playlists/sync', {}),
@@ -86,6 +121,7 @@ export const api = {
   getPlaylistTracks: () => get('/api/playlist-tracks'),
 
   // UG Import
+  openUG: (query) => get(`/api/open-ug?q=${encodeURIComponent(query)}`),
   getImportChords: () => get('/api/import-chords'),
 
   // Popular art (dashboard mosaic)

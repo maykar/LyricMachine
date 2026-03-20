@@ -10,7 +10,17 @@ function chordApiPlugin() {
     name: 'chord-api',
     configureServer(server) {
       // Dynamic import to avoid pulling Node deps into the client bundle
-      return import('./server/api.js').then(({ setupAPI }) => {
+      return Promise.all([
+        import('./server/api.js'),
+        import('./server/authMiddleware.js'),
+      ]).then(([{ setupAPI }, { authMiddleware, getApiToken }]) => {
+        server.middlewares.use(authMiddleware)
+        // Token bootstrap endpoint (skips auth)
+        server.middlewares.use('/api/auth/token', (req, res, next) => {
+          if (req.method !== 'GET') return next()
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ token: getApiToken() }))
+        })
         setupAPI(server.middlewares)
       })
     },

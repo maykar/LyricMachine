@@ -17,15 +17,10 @@ export function useChords(favorites, currentTitle, isSaved) {
     return !!(fav && fav.customChords)
   })
 
-  // Fetch Spotify track ID from the API and cache it in the DB
   async function fetchSpotifyId(artist, track, fav) {
     try {
-      const res = await fetch(
-        `/api/spotify-id?artist=${encodeURIComponent(artist)}&track=${encodeURIComponent(track)}`
-      )
-      if (!res.ok) return
-      const data = await res.json()
-      if (data.spotifyTrackId) {
+      const data = await api.getSpotifyId(artist, track)
+      if (data?.spotifyTrackId) {
         spotifyTrackId.value = data.spotifyTrackId
         if (fav) {
           fav.spotifyTrackId = data.spotifyTrackId

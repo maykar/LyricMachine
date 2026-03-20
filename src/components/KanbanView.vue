@@ -51,6 +51,7 @@ import { mdiClose } from '@mdi/js'
 
 import { splitTitle } from '../utils/titleParser.js'
 import { LABEL_OPTIONS } from '../constants/labels.js'
+import { api } from '../api.js'
 
 const props = defineProps({
   favorites: { type: Array, required: true },
@@ -107,11 +108,7 @@ function onDrop(targetLabel) {
 
     // Persist label change to DB
     if (fav.id) {
-      fetch(`/api/songs/${fav.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ label: targetLabel }),
-      })
+      api.updateSong(fav.id, { label: targetLabel })
     }
 
     /* Celebrate moving to "In Setlist" */

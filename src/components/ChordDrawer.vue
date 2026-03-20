@@ -378,7 +378,7 @@ function resetTranspose() {
   border-radius: var(--radius-xs);
   padding: 0.2rem 0.4rem;
   font-size: var(--font-sm);
-  color: #ddd;
+  color: var(--text-primary);
   outline: none;
 }
 

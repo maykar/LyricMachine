@@ -5,7 +5,10 @@ import { encrypt, decrypt } from './crypto.js'
 const SCOPES = 'playlist-modify-public playlist-modify-private playlist-read-private'
 
 function getRedirectUri() {
-  return process.env.SPOTIFY_REDIRECT_URI || 'http://127.0.0.1:5555/api/spotify/callback'
+  if (!process.env.SPOTIFY_REDIRECT_URI) {
+    throw new Error('SPOTIFY_REDIRECT_URI not set in .env — required for Spotify OAuth')
+  }
+  return process.env.SPOTIFY_REDIRECT_URI
 }
 
 // --- Auth routes ---
@@ -18,7 +21,7 @@ export function setupSpotifyAuthRoutes(server, { get, post, json }) {
     if (!clientId) return json(res, { error: 'SPOTIFY_CLIENT_ID not configured' }, 500)
 
     const state = crypto.randomBytes(16).toString('hex')
-    db.setSetting('spotify_auth_state', state)
+    db.setSetting('spotify_auth_state', { state, createdAt: Date.now() })
 
     const params = new URLSearchParams({
       client_id: clientId,
@@ -46,9 +49,10 @@ export function setupSpotifyAuthRoutes(server, { get, post, json }) {
       return
     }
 
-    // Validate state
-    const savedState = db.getSetting('spotify_auth_state')
-    if (state !== savedState) {
+    // Validate state with 5-minute expiry
+    const saved = db.getSetting('spotify_auth_state')
+    const STATE_MAX_AGE = 5 * 60 * 1000 // 5 minutes
+    if (!saved || state !== saved.state || (Date.now() - saved.createdAt) > STATE_MAX_AGE) {
       res.writeHead(302, { Location: '/?spotify_error=state_mismatch' })
       res.end()
       return
@@ -122,7 +126,6 @@ export function setupSpotifyAuthRoutes(server, { get, post, json }) {
   post(server, '/api/spotify/disconnect', (req, res) => {
     db.setSetting('spotify_tokens', null)
     db.setSetting('spotify_user', null)
-    db.setSetting('spotify_label_playlists', null)
     console.log('Spotify disconnected')
     json(res, { ok: true })
   })

@@ -132,6 +132,7 @@ import MdiIcon from './MdiIcon.vue'
 import { mdiClose, mdiCog } from '@mdi/js'
 import confettiModule from 'canvas-confetti'
 import { adjustDropdown } from '../utils/adjustDropdown.js'
+import { api } from '../api.js'
 
 const props = defineProps({
   favorites: { type: Array, required: true },
@@ -401,8 +402,7 @@ function onSpinClick() {
         spotifyId.value = cachedFav.spotifyTrackId
         preloadSpotifyTrack(cachedFav.spotifyTrackId)
       } else if (artist && track) {
-        fetch(`/api/spotify-id?artist=${encodeURIComponent(artist)}&track=${encodeURIComponent(track)}`)
-          .then(r => r.ok ? r.json() : null)
+        api.getSpotifyId(artist, track)
           .then(d => {
             if (d?.spotifyTrackId) {
               spotifyId.value = d.spotifyTrackId

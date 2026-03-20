@@ -2,6 +2,7 @@ import express from 'express';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { setupAPI } from './server/api.js';
+import { authMiddleware, getApiToken } from './server/authMiddleware.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -10,6 +11,14 @@ const app = express();
 
 // JSON body parsing for POST/PUT routes
 app.use(express.json({ limit: '10mb' }));
+
+// Auth middleware (before API routes)
+app.use(authMiddleware);
+
+// Token bootstrap endpoint (skips auth)
+app.get('/api/auth/token', (req, res) => {
+  res.json({ token: getApiToken() });
+});
 
 // API routes
 setupAPI(app);

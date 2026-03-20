@@ -2,6 +2,7 @@ import 'dotenv/config'
 import open from 'open'
 import defaultBrowser from 'default-browser'
 import * as db from './db.js'
+import { validate, SongCreateSchema, SongUpdateSchema, ReorderSchema, BulkUpdateSchema, ImportSchema } from './validation.js'
 import { handleSpotifyIdRequest, handlePlaylistTracks } from './spotify.js'
 import { handlePopularArt } from './popularArt.js'
 import { setupUGImportRoutes, setupBookmarkletRoutes } from './ugImport.js'
@@ -142,8 +143,9 @@ export function setupAPI(server) {
   post(server, '/api/songs', async (req, res) => {
     try {
       const body = await parseBody(req)
-      if (!body.title) return json(res, { error: 'title required' }, 400)
-      const song = db.upsertSong(body)
+      const { data, error } = validate(SongCreateSchema, body)
+      if (error) return json(res, { error }, 400)
+      const song = db.upsertSong(data)
       json(res, song, 201)
     } catch (err) {
       json(res, { error: err.message }, 500)
@@ -154,8 +156,9 @@ export function setupAPI(server) {
   put(server, '/api/songs/reorder', async (req, res) => {
     try {
       const body = await parseBody(req)
-      if (!Array.isArray(body.ids)) return json(res, { error: 'ids array required' }, 400)
-      db.reorderSongs(body.ids)
+      const { data, error } = validate(ReorderSchema, body)
+      if (error) return json(res, { error }, 400)
+      db.reorderSongs(data.ids)
       json(res, { ok: true })
     } catch (err) {
       json(res, { error: err.message }, 500)
@@ -166,8 +169,9 @@ export function setupAPI(server) {
   put(server, '/api/songs/bulk-update', async (req, res) => {
     try {
       const body = await parseBody(req)
-      if (!body.field) return json(res, { error: 'field required' }, 400)
-      const result = db.bulkUpdateField(body.field, body.value)
+      const { data, error } = validate(BulkUpdateSchema, body)
+      if (error) return json(res, { error }, 400)
+      const result = db.bulkUpdateField(data.field, data.value)
       if (!result.ok) return json(res, { error: result.error }, 400)
       json(res, { ok: true })
     } catch (err) {
@@ -186,7 +190,7 @@ export function setupAPI(server) {
   })
 
   // GET /api/songs/:id — must be AFTER the named routes above
-  get(server, '/api/songs/', (req, res) => {
+  get(server, '/api/songs', (req, res) => {
     try {
       // Matches /api/songs/42 — extract ID from the remainder
       const id = extractId(req)
@@ -200,12 +204,14 @@ export function setupAPI(server) {
   })
 
   // PUT /api/songs/:id — update song fields
-  put(server, '/api/songs/', async (req, res) => {
+  put(server, '/api/songs', async (req, res) => {
     try {
       const id = extractId(req)
       if (isNaN(id)) return json(res, { error: 'invalid id' }, 400)
       const body = await parseBody(req)
-      const song = db.updateSong(id, body)
+      const { data, error } = validate(SongUpdateSchema, body)
+      if (error) return json(res, { error }, 400)
+      const song = db.updateSong(id, data)
       if (!song) return json(res, { error: 'not found' }, 404)
       json(res, song)
     } catch (err) {
@@ -214,7 +220,7 @@ export function setupAPI(server) {
   })
 
   // DELETE /api/songs/:id
-  del(server, '/api/songs/', async (req, res) => {
+  del(server, '/api/songs', async (req, res) => {
     try {
       const id = extractId(req)
       if (isNaN(id)) return json(res, { error: 'invalid id' }, 400)
@@ -227,13 +233,13 @@ export function setupAPI(server) {
 
   // ===== Settings =====
 
-  get(server, '/api/settings/', (req, res) => {
+  get(server, '/api/settings', (req, res) => {
     const key = req.url.split('/').pop()
     const value = db.getSetting(key)
     json(res, value !== null ? value : {})
   })
 
-  put(server, '/api/settings/', async (req, res) => {
+  put(server, '/api/settings', async (req, res) => {
     try {
       const key = req.url.split('/').pop()
       const body = await parseBody(req)
@@ -258,8 +264,9 @@ export function setupAPI(server) {
   post(server, '/api/import', async (req, res) => {
     try {
       const body = await parseBody(req)
-      if (!Array.isArray(body)) return json(res, { error: 'expected array' }, 400)
-      const imported = db.importFavorites(body)
+      const { data, error } = validate(ImportSchema, body)
+      if (error) return json(res, { error }, 400)
+      const imported = db.importFavorites(data)
       json(res, { imported, total: db.getSongCount() })
     } catch (err) {
       json(res, { error: err.message }, 500)

@@ -6,15 +6,17 @@ description: Run a Gemini CLI code review on recent changes
 
 // turbo-all
 
-1. Generate a diff of recent changes:
+1. Generate a diff and **save it to a file** (never read `git diff` from terminal buffer — it garbles):
 
 ```powershell
-git diff HEAD
+git diff HEAD | Out-File -Encoding utf8 'C:\Users\theme\AppData\Local\Temp\review-diff.txt'
 ```
 
-If the diff is empty, skip to step 2 with a holistic review prompt instead.
+If the diff is empty, skip to step 3 with a holistic review prompt instead.
 
-2. Write the review prompt to the temp file. Include severity ratings and a verdict requirement:
+2. Read the diff file with `view_file` at `C:\Users\theme\AppData\Local\Temp\review-diff.txt`.
+
+3. Write the review prompt to the temp file. **Embed the diff content you just read**, not a placeholder. Include severity ratings and a verdict requirement:
 
 ```powershell
 Set-Content -Path 'C:\Users\theme\AppData\Local\Temp\review-prompt.txt' -Value @"
@@ -32,9 +34,11 @@ Use severity ratings: 🔴 Critical, 🟡 Warning, 🟢 Suggestion.
 End with a verdict: APPROVE, REQUEST CHANGES, or NEEDS DISCUSSION.
 Be concise. Bullets over paragraphs.
 
+Do NOT dismiss any finding by claiming the app is "personal use", "single user", "local only", or any similar assumption. Treat every finding as if this is production software with multiple users.
+
 ## Diff
 ``````diff
-<paste diff here, or replace with "No specific diff. Perform a holistic codebase review.">
+<PASTE THE DIFF CONTENT HERE — do NOT leave this as a placeholder>
 ``````
 
 ## Additional Instructions
@@ -42,16 +46,26 @@ Be concise. Bullets over paragraphs.
 "@
 ```
 
-3. Run Gemini CLI from the **project root** and capture output to a fixed file:
+4. **Delete stale output** before running Gemini CLI to prevent reading old results:
 
 ```powershell
-$p = Get-Content -Raw 'C:\Users\theme\AppData\Local\Temp\review-prompt.txt'; gemini -m flash -p $p 2>$null | Tee-Object -FilePath 'C:\Users\theme\AppData\Local\Temp\review-output.txt'
+Remove-Item -Force -ErrorAction SilentlyContinue 'C:\Users\theme\AppData\Local\Temp\review-output.txt'
 ```
 
-4. Read the output file with `view_file` at `C:\Users\theme\AppData\Local\Temp\review-output.txt`.
+5. Run Gemini CLI from the **project root** via `cmd /c gemini.cmd` (the PowerShell `.ps1` shim crashes with `StandardOutputEncoding` errors when stdout is redirected):
 
-5. Present the review to the user.
+```powershell
+cmd /c "cd /d c:\Users\theme\Desktop\LyricMachine && gemini.cmd -m flash -p ""$(Get-Content -Raw 'C:\Users\theme\AppData\Local\Temp\review-prompt.txt')"" > C:\Users\theme\AppData\Local\Temp\review-output.txt 2>&1"
+```
 
-6. If the verdict is **REQUEST CHANGES**, address each item and re-run from step 1.
+⚠️ **CRITICAL**: Do NOT use `gemini` (the `.ps1` shim) with any form of output redirection (`>`, `| Tee-Object`, `2>$null`). It will crash with `StandardOutputEncoding` errors. Always use `cmd /c gemini.cmd` instead.
 
-7. If the verdict is **APPROVE**, notify the user that the review passed.
+6. **Verify the output file exists and is non-empty.** If the file is missing, empty, or contains only error messages, report the failure to the user instead of reading stale results.
+
+7. Read the output file with `view_file` at `C:\Users\theme\AppData\Local\Temp\review-output.txt`.
+
+8. Present the review to the user.
+
+9. If the verdict is **REQUEST CHANGES**, address each item and re-run from step 1.
+
+10. If the verdict is **APPROVE**, notify the user that the review passed.

@@ -35,6 +35,6 @@ defineEmits(['toggle'])
 
 .star-button.saved {
   opacity: 1;
-  color: #f5c542;
+  color: var(--accent);
 }
 </style>

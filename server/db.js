@@ -1,5 +1,5 @@
 import { DatabaseSync } from 'node:sqlite'
-import { mkdirSync, copyFileSync, readdirSync, unlinkSync, existsSync } from 'node:fs'
+import { mkdirSync, copyFileSync, readdirSync, readFileSync, unlinkSync, existsSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -39,7 +39,7 @@ const db = new DatabaseSync(DB_PATH)
 db.exec(`
   CREATE TABLE IF NOT EXISTS songs (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    title           TEXT NOT NULL UNIQUE,
+    title           TEXT NOT NULL,
     lyrics          TEXT DEFAULT '',
     font_adjust     INTEGER DEFAULT 0,
     merge           INTEGER DEFAULT 0,
@@ -59,14 +59,7 @@ db.exec(`
     updated_at      TEXT DEFAULT (datetime('now'))
   )
 `)
-
-// Migration: add not_in_playlist to existing databases
-try {
-  db.exec('ALTER TABLE songs ADD COLUMN not_in_playlist INTEGER DEFAULT 0')
-} catch {
-  // Column already exists
-}
-
+// Settings table (must exist before migrations, which use it for schema_version)
 db.exec(`
   CREATE TABLE IF NOT EXISTS settings (
     key   TEXT PRIMARY KEY,
@@ -74,11 +67,91 @@ db.exec(`
   )
 `)
 
+// --- Migrations ---
+// Numbered SQL files in server/migrations/ run automatically on startup.
+// schema_version setting tracks the last applied migration number.
+
+function getSchemaVersion() {
+  try {
+    const row = db.prepare('SELECT value FROM settings WHERE key = ?').get('schema_version')
+    return row ? parseInt(row.value, 10) : 0
+  } catch {
+    return 0  // settings table might not exist yet
+  }
+}
+
+function runMigrations() {
+  const migrationsDir = join(dirname(fileURLToPath(import.meta.url)), 'migrations')
+  if (!existsSync(migrationsDir)) return
+
+  const files = readdirSync(migrationsDir)
+    .filter(f => f.endsWith('.sql'))
+    .sort()
+
+  const currentVersion = getSchemaVersion()
+
+  for (const file of files) {
+    const num = parseInt(file.split('_')[0], 10)
+    if (isNaN(num) || num <= currentVersion) continue
+
+    console.log(`Running migration ${file}...`)
+
+    // Special handling for 002: table recreation to drop UNIQUE constraint
+    if (num === 2) {
+      try {
+        const tableInfo = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='songs'").get()
+        if (tableInfo && tableInfo.sql.includes('UNIQUE')) {
+          db.exec('BEGIN')
+          try {
+            // Recreate table without UNIQUE on title
+            const cols = db.prepare('PRAGMA table_info(songs)').all()
+            const colDefs = cols.map(c => {
+              let def = `${c.name} ${c.type || 'TEXT'}`
+              if (c.pk) def += ' PRIMARY KEY AUTOINCREMENT'
+              if (c.notnull && !c.pk) def += ' NOT NULL'
+              if (c.dflt_value !== null && !c.pk) def += ` DEFAULT ${c.dflt_value}`
+              return def
+            }).join(',\n        ')
+
+            db.exec(`CREATE TABLE songs_new (${colDefs})`)
+            db.exec(`INSERT INTO songs_new SELECT * FROM songs`)
+            db.exec(`DROP TABLE songs`)
+            db.exec(`ALTER TABLE songs_new RENAME TO songs`)
+            db.exec('COMMIT')
+            console.log('Migration 002: UNIQUE constraint removed from title')
+          } catch (err) {
+            db.exec('ROLLBACK')
+            console.error('Migration 002 table recreation failed:', err.message)
+            continue
+          }
+        }
+      } catch { /* fresh install, no UNIQUE to remove */ }
+    }
+
+    // Run the SQL file — strip comments and execute the whole batch
+    try {
+      const raw = readFileSync(join(migrationsDir, file), 'utf8')
+      const sql = raw.replace(/--.*$/gm, '').trim()
+      if (sql) {
+        try { db.exec(sql) } catch { /* IF NOT EXISTS / IF EXISTS guards handle duplicates */ }
+      }
+      // Update schema version
+      db.exec(`INSERT INTO settings (key, value) VALUES ('schema_version', '${num}') ON CONFLICT(key) DO UPDATE SET value = '${num}'`)
+      console.log(`Migration ${file} complete`)
+    } catch (err) {
+      console.error(`Migration ${file} failed:`, err.message)
+    }
+  }
+}
+
+runMigrations()
+
 // --- Prepared statements ---
 const stmts = {
   allSongs:     db.prepare('SELECT * FROM songs ORDER BY sort_order ASC, id ASC'),
   songById:     db.prepare('SELECT * FROM songs WHERE id = ?'),
   songByTitle:  db.prepare('SELECT * FROM songs WHERE title = ?'),
+  songByTitleAndTrackId: db.prepare('SELECT * FROM songs WHERE title = ? AND COALESCE(spotify_track_id, \'\') = COALESCE(?, \'\')'),
   songCount:    db.prepare('SELECT COUNT(*) AS count FROM songs'),
 
   insertSong:   db.prepare(`
@@ -192,10 +265,19 @@ export function createSong(song) {
 }
 
 export function upsertSong(song) {
-  const existing = stmts.songByTitle.get(song.title)
+  // Match by (title, spotify_track_id) to allow different songs with the same title
+  const existing = stmts.songByTitleAndTrackId.get(song.title, song.spotifyTrackId || null)
   if (existing) {
     updateSong(existing.id, song)
     return getSong(existing.id)
+  }
+  // Fallback: also check by title-only for songs without track IDs (manual creation)
+  if (!song.spotifyTrackId) {
+    const byTitle = stmts.songByTitle.get(song.title)
+    if (byTitle) {
+      updateSong(byTitle.id, song)
+      return getSong(byTitle.id)
+    }
   }
   return createSong(song)
 }
@@ -275,7 +357,10 @@ export function setSetting(key, value) {
 export function importFavorites(favs) {
   let imported = 0
   for (let i = 0; i < favs.length; i++) {
-    const existing = stmts.songByTitle.get(favs[i].title)
+    // Match by (title, spotify_track_id) to allow different songs with same title
+    const existing = stmts.songByTitleAndTrackId.get(
+      favs[i].title, favs[i].spotifyTrackId || null
+    )
     if (existing) continue
     const params = songToParams(favs[i], i)
     stmts.insertSong.run(params)

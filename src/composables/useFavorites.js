@@ -1,5 +1,8 @@
 import { ref, computed } from 'vue'
 import { api } from '../api.js'
+import { useToast } from './useToast.js'
+
+const { showToast } = useToast()
 
 // --- Module-level singleton: shared reactive state across all consumers ---
 const favorites = ref([])
@@ -106,21 +109,21 @@ export function useFavorites() {
 
   /**
    * Persist a single property change — update local cache optimistically, then fire API.
-   *
-   * INTENTIONAL: We do NOT rollback the local state on API failure.
-   * This is a personal local-network tool where connectivity is reliable
-   * and the UX cost of a stale-on-failure state (until next reload) is
-   * much lower than the jank of reverting values visually. Failures are
-   * still logged to console for debugging.
+   * On failure: show an error toast and re-fetch all songs from the server to re-sync.
    */
   function updateFavProp(prop, value) {
     if (!isSaved.value) return
     const fav = favorites.value.find(f => f.title === currentTitle.value)
     if (fav) {
+      const oldValue = fav[prop]
       fav[prop] = value
-      if (fav.id) apiUpdateSong(fav.id, { [prop]: value }).catch(err =>
+      if (fav.id) apiUpdateSong(fav.id, { [prop]: value }).catch(err => {
         console.warn(`Failed to persist ${prop}:`, err.message)
-      )
+        showToast(`Failed to save ${prop}`, { type: 'error' })
+        // Rollback local state and re-sync from server
+        fav[prop] = oldValue
+        loadFavorites()
+      })
     }
   }
 

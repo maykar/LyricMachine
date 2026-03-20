@@ -138,7 +138,7 @@
 </template>
 
 <script setup>
-import { ref, watch, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, watch, onMounted, onUnmounted, onErrorCaptured, nextTick } from 'vue'
 import LyricsDisplay from './components/LyricsDisplay.vue'
 import LibraryOverlay from './components/LibraryOverlay.vue'
 import TopBar from './components/TopBar.vue'
@@ -151,6 +151,7 @@ import Dashboard from './components/Dashboard.vue'
 import ToastContainer from './components/ToastContainer.vue'
 
 import { api } from './api.js'
+import { useToast } from './composables/useToast.js'
 
 import { useFavorites } from './composables/useFavorites.js'
 import { useSettings } from './composables/useSettings.js'
@@ -160,6 +161,14 @@ import { usePlaylistSync } from './composables/usePlaylistSync.js'
 import { useKeyboard } from './composables/useKeyboard.js'
 import { useNavigation } from './composables/useNavigation.js'
 import { useSpotifyAuth } from './composables/useSpotifyAuth.js'
+
+// --- Error boundary ---
+const { showToast } = useToast()
+onErrorCaptured((err) => {
+  console.error('Unhandled component error:', err)
+  showToast(err.message || 'Something went wrong', { type: 'error' })
+  return false  // prevent propagation
+})
 
 // --- Composables ---
 const {
@@ -205,52 +214,16 @@ async function onSpotifySync() {
   await loadFavorites()
 }
 
-// --- Debounced label→playlist sync ---
-let labelSyncTimer = null
-let labelsDirty = false
-let lastSyncAt = 0
-const SYNC_COOLDOWN = 30000 // 30s
-
-async function flushLabelSync() {
-  clearTimeout(labelSyncTimer)
-  if (!labelsDirty || !spotifyConnected.value) return
-  labelsDirty = false
-  try {
-    await api.syncSpotify()
-    lastSyncAt = Date.now()
-    console.log('Label playlist sync complete')
-  } catch (err) {
-    console.warn('Label playlist sync failed:', err.message)
-  }
-}
-
-function scheduleLabelSync() {
-  if (!spotifyConnected.value) return
-  labelsDirty = true
-  clearTimeout(labelSyncTimer)
-  labelSyncTimer = setTimeout(flushLabelSync, 5000)
-}
-
 function onSetLabel(label) {
   setLabel(label)
-  scheduleLabelSync()
 }
 
 function onLibraryUpdated() {
   refreshCurrentSong()
-  scheduleLabelSync()
 }
 
-async function openKanban() {
+function openKanban() {
   pushModal('kanban')
-  // Rate-limited pull from Spotify before showing the board
-  if (spotifyConnected.value && Date.now() - lastSyncAt > SYNC_COOLDOWN) {
-    try {
-      await api.syncSpotify()
-      lastSyncAt = Date.now()
-      await loadFavorites()
-    } catch {}
-  }
 }
 
 // --- UI state (unified navigation) ---
@@ -281,12 +254,10 @@ function goHome() {
 
 function onKanbanUpdate(updatedFavs) {
   favorites.value = updatedFavs
-  scheduleLabelSync()
 }
 
 function onKanbanClose() {
   closeModal('kanban')
-  flushLabelSync()
 }
 
 function onRandomizerSelect(fav) {
@@ -464,7 +435,7 @@ onMounted(async () => {
   await checkSpotifyStatus()
 
   if (spotifyConnected.value) {
-    // Server-side sync handles everything: source + labels + not-in-playlist tracking
+    // Server-side sync handles source playlist + not-in-playlist tracking
     try {
       await api.syncSpotify()
       await loadFavorites()

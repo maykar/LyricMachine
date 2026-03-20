@@ -73,11 +73,8 @@ export function usePlaylistSync(favorites, userDefaults) {
         const artist = parts[0].trim()
         const track = parts[1].trim()
         try {
-          const res = await fetch(
-            `/api/spotify-id?artist=${encodeURIComponent(artist)}&track=${encodeURIComponent(track)}`
-          )
-          if (!res.ok) continue
-          const data = await res.json()
+          const data = await api.getSpotifyId(artist, track)
+          if (!data) continue
           if (data.albumArt) fav.albumArt = data.albumArt
           if (data.spotifyTrackId && !fav.spotifyTrackId) fav.spotifyTrackId = data.spotifyTrackId
 

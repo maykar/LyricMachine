@@ -36,7 +36,10 @@ LyricMachine helps musicians display song lyrics, chords, and Spotify playback d
 │   ├── ugImport.js          # Import/poll endpoints + bookmarklet page
 │   ├── bookmarklet.js       # Browser bookmarklet code
 │   ├── popularArt.js        # Dashboard album art mosaic helper (genres configurable via settings)
-│   └── crypto.js            # AES-256-GCM encrypt/decrypt for Spotify tokens, auto-generates key
+│   ├── crypto.js            # AES-256-GCM encrypt/decrypt for Spotify tokens, auto-generates key
+│   ├── authMiddleware.js    # API token auth + CSRF origin check middleware, auto-generates token
+│   ├── validation.js        # Valibot input validation schemas for API routes
+│   └── migrations/          # Numbered SQL migration files (run automatically on startup)
 ├── src/
 │   ├── App.vue              # Root component — wires all features together
 │   ├── api.js               # Centralized API client — wraps every server endpoint, errors → console + toast
@@ -99,8 +102,11 @@ npm test                     # Run test suite
 
 See `.env.example` for required variables. Never commit `.env`.
 
-Required: `SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET`
-Optional: `SPOTIFY_REDIRECT_URI` (defaults to `http://127.0.0.1:5555/api/spotify/callback`)
+Required: `SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET`, `SPOTIFY_REDIRECT_URI`
+
+Auto-generated (do not commit):
+- `ENCRYPTION_KEY` — AES-256 key for Spotify token storage. Generated on first Spotify login. Losing it invalidates stored tokens.
+- `API_TOKEN` — Bearer token for API authentication. Generated on first server startup.
 
 Source playlist is selected via UI in settings (no env var needed).
 
@@ -238,20 +244,46 @@ When adding new features, add tests in the appropriate `tests/` subdirectory.
 - **NEVER** write code that can delete all rows from a production table. If bulk deletion is needed, require explicit confirmation or a safety flag.
 - **ALWAYS** consider what happens if your code runs against a database with real user data.
 
+## ⚠️ MANDATORY — Code Review After Significant Work
+
+> **THIS RULE IS NON-NEGOTIABLE. EVERY AGENT MUST FOLLOW IT.**
+
+**After completing significant work, you MUST run a Gemini CLI code review BEFORE notifying the user.** This is NOT optional. Do NOT notify the user until the review is done and findings are addressed.
+
+Follow `.agent/workflows/code-review.md` for the full process. The short version:
+1. Generate a diff: `git diff HEAD | Out-File -Encoding utf8 'C:\Users\theme\AppData\Local\Temp\review-diff.txt'`
+2. Write the review prompt to temp file (include the diff content)
+3. Delete stale output, run Gemini CLI via `cmd /c gemini.cmd` (NOT the `.ps1` shim), read the output file
+4. Address findings, then notify the user
+
 ## Code Review via Gemini CLI
 
 Gemini CLI is installed globally and authenticated with the user's Google AI Ultra account. Use it for code review with **full codebase context** by running it via `run_command`.
 
-### How to use
+### Generating diffs
 
-1. Write the review prompt (including any diff) to a temp file
-2. Run Gemini CLI from the **project root** so `@.` reads all non-gitignored files:
+**ALWAYS** save diffs to a file first — never read `git diff` output from the terminal buffer (it gets garbled/truncated on large diffs):
 
 ```powershell
-$p = Get-Content -Raw 'C:\Users\theme\AppData\Local\Temp\review-prompt.txt'; gemini -m flash -p $p 2>$null | Tee-Object -FilePath 'C:\Users\theme\AppData\Local\Temp\review-output.txt'
+git diff HEAD | Out-File -Encoding utf8 'C:\Users\theme\AppData\Local\Temp\review-diff.txt'
 ```
 
-3. Read the output file with `view_file` and present the review to the user
+Then read it with `view_file` and embed it in the review prompt.
+
+### Running the review
+
+1. Write the review prompt (including the diff) to a temp file
+2. Delete stale output: `Remove-Item -Force -ErrorAction SilentlyContinue 'C:\Users\theme\AppData\Local\Temp\review-output.txt'`
+3. Run Gemini CLI from the **project root** via `cmd /c gemini.cmd` (**NOT** the `.ps1` shim — it crashes with `StandardOutputEncoding` errors when stdout is redirected):
+
+```powershell
+cmd /c "cd /d c:\Users\theme\Desktop\LyricMachine && gemini.cmd -m flash -p ""$(Get-Content -Raw 'C:\Users\theme\AppData\Local\Temp\review-prompt.txt')"" > C:\Users\theme\AppData\Local\Temp\review-output.txt 2>&1"
+```
+
+> ⚠️ **CRITICAL**: Do NOT use `gemini` (the `.ps1` shim) with any form of output redirection (`>`, `| Tee-Object`, `2>$null`). It will crash. Always use `cmd /c gemini.cmd` instead.
+
+4. Verify the output file exists and is non-empty
+5. Read the output file with `view_file` and present the review to the user
 
 The prompt should include:
 - Instructions to review for bugs, security, performance, style, and testing
@@ -261,7 +293,7 @@ The prompt should include:
 
 ### When to use
 
-- **After completing significant work** — automatically run a review before notifying the user. Generate a `git diff HEAD` and pass it as the `diff`. This is NOT optional — always do this after major changes.
+- **After completing significant work** — see mandatory rule above
 - User says `/code-review` → follow `.agent/workflows/code-review.md`
 - User asks for a "code review", "review my changes", "review the codebase", etc.
 
@@ -270,7 +302,21 @@ The prompt should include:
 - `flash` — default, fast reviews
 - `gemini-3.1-pro` — thorough reviews when the user requests it
 
+## Known Limitations
+
+- **Synchronous SQLite**: `node:sqlite`'s `DatabaseSync` blocks the event loop during queries. Consider `better-sqlite3` (async-capable) if scaling up.
+- **Mixed async/sync patterns**: Server code mixes `async/await` for network fetches with synchronous DB calls. This is intentional for simplicity but complicates future migration to async databases.
+- **Binary-search font sizing**: `LyricsDisplay.vue` triggers multiple DOM reflows during initial font calculation. Mitigated by a per-song font cache (only first load is slow).
+
+## ⚠️ MANDATORY — No Assumptions About App Use
+
+> **THIS RULE IS NON-NEGOTIABLE.**
+
+**NEVER assume this application is "personal use", "single user", "local only", "band tool", or any other scope limitation to dismiss or downgrade valid concerns.** Treat every bug, security issue, and performance problem as if this is production software with multiple concurrent users. If a concern is valid, address it — do not invent excuses to skip it.
+
 ## Agent Tooling Notes
+
+> **Never start the server**: Do NOT run `npm run dev`, `npm start`, or any command that starts the dev/production server. The user manages the server lifecycle. If a restart is needed after your changes, tell the user to restart.
 
 > **`grep_search` bug**: Single-file `SearchPath` always returns "No results found". Use **directory** as `SearchPath` + `Includes` glob to filter. Example: `SearchPath: src/components`, `Includes: ["SongRandomizer.vue"]`.
 

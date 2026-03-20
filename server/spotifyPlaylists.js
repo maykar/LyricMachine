@@ -31,11 +31,6 @@ export function setupSpotifyPlaylistRoutes(server, { get, post, json }) {
     }
   })
 
-  // GET /api/spotify/playlists/label — get stored label→playlist mappings
-  get(server, '/api/spotify/playlists/label', (req, res) => {
-    const mappings = db.getSetting('spotify_label_playlists') || {}
-    json(res, mappings)
-  })
 
   // POST /api/spotify/playlists/sync — full bi-directional sync
   post(server, '/api/spotify/playlists/sync', async (req, res) => {
@@ -93,24 +88,15 @@ async function runFullSync() {
     const user = db.getSetting('spotify_user')
     if (!user) throw new Error('Spotify not connected')
 
-    const bandName = db.getSetting('band_name')?.value || db.getSetting('band_name') || ''
-    const labelSyncEnabled = db.getSetting('spotify_label_sync')
     const sourcePlaylistId = db.getSetting('spotify_source_playlist')?.value || db.getSetting('spotify_source_playlist') || ''
 
-    const results = { sourceImported: 0, sourceMarkedRemoved: 0, labelsPushed: 0, labelsImported: 0 }
+    const results = { sourceImported: 0, sourceMarkedRemoved: 0 }
 
-    // --- 1. Source playlist sync ---
+    // --- Source playlist sync ---
     if (sourcePlaylistId) {
       const syncResult = await syncSourcePlaylist(sourcePlaylistId)
       results.sourceImported = syncResult.imported
       results.sourceMarkedRemoved = syncResult.markedRemoved
-    }
-
-    // --- 2. Label playlist sync ---
-    if (labelSyncEnabled?.value ?? labelSyncEnabled) {
-      const labelResult = await syncLabelPlaylists(user.id, bandName)
-      results.labelsPushed = labelResult.pushed
-      results.labelsImported = labelResult.imported
     }
 
     console.log('Sync results:', results)
@@ -183,114 +169,6 @@ async function syncSourcePlaylist(playlistId) {
   return { imported, markedRemoved }
 }
 
-// --- Label playlist sync ---
-
-const LABEL_NAMES = {
-  fresh: 'Fresh',
-  'getting-there': 'Getting There',
-  'in-setlist': 'In Setlist',
-}
-
-async function syncLabelPlaylists(userId, bandName) {
-  const songs = db.getAllSongs()
-  const mappings = db.getSetting('spotify_label_playlists') || {}
-
-  let pushed = 0
-  let imported = 0
-
-  // Process labels sequentially — Spotify's API has rate limits and concurrent
-  // mutations to label playlists (add/remove tracks) can race. Unlike source
-  // playlist sync (which batch-fetches lyrics in parallel), label sync modifies
-  // Spotify state per-label, so sequential processing is intentionally correct.
-  for (const [labelKey, labelDisplayName] of Object.entries(LABEL_NAMES)) {
-    // Songs with this label that have Spotify track IDs
-    const labelSongs = songs.filter(s => s.label === labelKey && s.spotifyTrackId)
-    const localTrackIds = new Set(labelSongs.map(s => s.spotifyTrackId))
-
-    // Get or create the playlist
-    let playlistId = mappings[labelKey]
-    if (!playlistId && labelSongs.length === 0) continue // Don't create empty playlists
-
-    if (!playlistId && labelSongs.length > 0) {
-      // Create the playlist
-      const playlistName = bandName ? `${bandName} — ${labelDisplayName}` : labelDisplayName
-      playlistId = await createPlaylist(userId, playlistName)
-      mappings[labelKey] = playlistId
-      db.setSetting('spotify_label_playlists', mappings)
-      console.log(`Created Spotify playlist: "${playlistName}" (${playlistId})`)
-    }
-
-    if (!playlistId) continue
-
-    // Fetch current playlist tracks
-    const playlistTracks = await getPlaylistTracks(playlistId)
-    const remoteTrackIds = new Set(playlistTracks.filter(t => t.id).map(t => t.id))
-
-    // Push: add local songs missing from Spotify
-    const toAdd = labelSongs.filter(s => !remoteTrackIds.has(s.spotifyTrackId))
-    if (toAdd.length > 0) {
-      const uris = toAdd.map(s => `spotify:track:${s.spotifyTrackId}`)
-      await addTracksToPlaylist(playlistId, uris)
-      pushed += toAdd.length
-      console.log(`Label sync: added ${toAdd.length} tracks to "${labelDisplayName}"`)
-    }
-
-    // Push: remove Spotify tracks whose local label no longer matches
-    const toRemove = playlistTracks.filter(t => t.id && !localTrackIds.has(t.id))
-    // Only remove tracks that ARE in our library with a different label
-    const allSongsByTrackId = new Map(songs.filter(s => s.spotifyTrackId).map(s => [s.spotifyTrackId, s]))
-    const actualRemoves = toRemove.filter(t => {
-      const song = allSongsByTrackId.get(t.id)
-      return song && song.label !== labelKey
-    })
-    if (actualRemoves.length > 0) {
-      const uris = actualRemoves.map(t => `spotify:track:${t.id}`)
-      await removeTracksFromPlaylist(playlistId, uris)
-      console.log(`Label sync: removed ${actualRemoves.length} tracks from "${labelDisplayName}"`)
-    }
-
-    // Track IDs we just removed from this playlist (push step above) so we
-    // don't re-import them in the pull step from the stale snapshot.
-    const removedIds = new Set(actualRemoves.map(t => t.id))
-
-    // Pull: import tracks added on Spotify that aren't in our library
-    const existingNormalized = new Map(songs.map(s => [normalize(s.title), s]))
-    for (const track of playlistTracks) {
-      if (track.type !== 'track') continue
-      if (removedIds.has(track.id)) continue // skip tracks we just pushed out
-      const title = `${track.artist} \u2014 ${track.name}`
-      const existing = existingNormalized.get(normalize(title))
-      if (existing) {
-        // Update label if different
-        if (existing.label !== labelKey) {
-          db.updateSong(existing.id, { label: labelKey })
-        }
-        continue
-      }
-
-      // New song — import
-      const lyrics = await fetchLrcLibLyrics(track.artist, track.name)
-
-      const defaults = db.getSetting('userDefaults') || {}
-      db.upsertSong({
-        title,
-        lyrics,
-        label: labelKey,
-        fontAdjust: 0,
-        merge: defaults.merge || false,
-        separators: defaults.separators || false,
-        altColors: defaults.altColors !== false,
-        spotifyTrackId: track.id || null,
-        albumArt: track.albumArt || null,
-      })
-      imported++
-      console.log(`Label sync: imported "${track.name}" from "${labelDisplayName}" playlist`)
-    }
-  }
-
-  return { pushed, imported }
-}
-
 // --- Spotify API helpers ---
 
 async function getPlaylistTracks(playlistId) {
@@ -319,20 +197,6 @@ async function getPlaylistTracks(playlistId) {
   return tracks
 }
 
-async function createPlaylist(userId, name) {
-  const res = await spotifyFetch(`https://api.spotify.com/v1/users/${userId}/playlists`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      name,
-      public: false,
-      description: 'Managed by LyricMachine',
-    }),
-  })
-  const data = await res.json()
-  return data.id
-}
-
 async function addTracksToPlaylist(playlistId, uris) {
   // Spotify allows max 100 per request
   for (let i = 0; i < uris.length; i += 100) {
@@ -341,19 +205,6 @@ async function addTracksToPlaylist(playlistId, uris) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ uris: batch }),
-    })
-  }
-}
-
-async function removeTracksFromPlaylist(playlistId, uris) {
-  for (let i = 0; i < uris.length; i += 100) {
-    const batch = uris.slice(i, i + 100)
-    await spotifyFetch(`https://api.spotify.com/v1/playlists/${playlistId}/tracks`, {
-      method: 'DELETE',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        tracks: batch.map(uri => ({ uri })),
-      }),
     })
   }
 }

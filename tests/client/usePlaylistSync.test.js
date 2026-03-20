@@ -10,6 +10,7 @@ vi.mock('../../src/api.js', () => ({
     getPlaylistTracks: vi.fn(),
     createSong: vi.fn(),
     updateSong: vi.fn(),
+    getSpotifyId: vi.fn(),
   },
 }))
 
@@ -121,22 +122,18 @@ describe('usePlaylistSync', () => {
     it('does nothing when all songs have album art', async () => {
       favorites.value = [{ title: 'A — B', albumArt: 'exists.jpg' }]
       await sync.backfillAlbumArt()
-      expect(fetch).not.toHaveBeenCalledWith(expect.stringContaining('/api/spotify-id'), undefined)
+      expect(api.getSpotifyId).not.toHaveBeenCalled()
     })
 
     it('skips songs without separator in title', async () => {
       favorites.value = [{ title: 'No Separator' }]
       await sync.backfillAlbumArt()
-      // fetch should not be called for spotify-id
-      expect(fetch).not.toHaveBeenCalledWith(expect.stringContaining('/api/spotify-id'))
+      expect(api.getSpotifyId).not.toHaveBeenCalled()
     })
 
     it('fetches and sets album art for songs missing it', async () => {
       favorites.value = [{ id: 5, title: 'Foo — Bar' }]
-      vi.spyOn(globalThis, 'fetch').mockResolvedValue({
-        ok: true,
-        json: () => Promise.resolve({ albumArt: 'newart.jpg', spotifyTrackId: 'sp123' }),
-      })
+      api.getSpotifyId.mockResolvedValue({ albumArt: 'newart.jpg', spotifyTrackId: 'sp123' })
 
       await sync.backfillAlbumArt()
       expect(favorites.value[0].albumArt).toBe('newart.jpg')
@@ -146,7 +143,7 @@ describe('usePlaylistSync', () => {
 
     it('handles fetch failure gracefully', async () => {
       favorites.value = [{ title: 'A — B' }]
-      vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: false })
+      api.getSpotifyId.mockResolvedValue(null)
 
       await sync.backfillAlbumArt() // should not throw
     })

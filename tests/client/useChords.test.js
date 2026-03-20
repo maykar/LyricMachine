@@ -8,6 +8,7 @@ import { ref } from 'vue'
 vi.mock('../../src/api.js', () => ({
   api: {
     updateSong: vi.fn(),
+    getSpotifyId: vi.fn().mockResolvedValue({}),
   },
 }))
 
@@ -108,7 +109,7 @@ describe('useChords', () => {
       }]
 
       await chords.fetchChords('Foo — Bar')
-      expect(fetch).toHaveBeenCalledWith(expect.stringContaining('/api/spotify-id'))
+      expect(api.getSpotifyId).toHaveBeenCalledWith('Foo', 'Bar')
     })
   })
 

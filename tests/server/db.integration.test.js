@@ -15,7 +15,7 @@ function createTestDB() {
   db.exec(`
     CREATE TABLE songs (
       id              INTEGER PRIMARY KEY AUTOINCREMENT,
-      title           TEXT NOT NULL UNIQUE,
+      title           TEXT NOT NULL,
       lyrics          TEXT DEFAULT '',
       font_adjust     INTEGER DEFAULT 0,
       merge           INTEGER DEFAULT 0,
@@ -35,6 +35,8 @@ function createTestDB() {
       updated_at      TEXT DEFAULT (datetime('now'))
     )
   `)
+
+  db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_songs_title_trackid ON songs(title, COALESCE(spotify_track_id, ''))`)
 
   db.exec(`
     CREATE TABLE settings (
@@ -132,9 +134,24 @@ describe('db integration (isolated)', () => {
       expect(song.customChords).toEqual(chords)
     })
 
-    it('enforces unique titles', () => {
-      db.prepare(`INSERT INTO songs (title) VALUES (?)`).run('Unique')
-      expect(() => db.prepare(`INSERT INTO songs (title) VALUES (?)`).run('Unique')).toThrow()
+    it('allows same title with different spotify_track_id', () => {
+      db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_songs_title_trackid ON songs(title, COALESCE(spotify_track_id, ''))`)
+      db.prepare(`INSERT INTO songs (title, spotify_track_id) VALUES (?, ?)`).run('Home', 'track_1')
+      db.prepare(`INSERT INTO songs (title, spotify_track_id) VALUES (?, ?)`).run('Home', 'track_2')
+      const songs = db.prepare('SELECT * FROM songs WHERE title = ?').all('Home')
+      expect(songs).toHaveLength(2)
+    })
+
+    it('rejects duplicate title + spotify_track_id combo', () => {
+      db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_songs_title_trackid ON songs(title, COALESCE(spotify_track_id, ''))`)
+      db.prepare(`INSERT INTO songs (title, spotify_track_id) VALUES (?, ?)`).run('Home', 'track_1')
+      expect(() => db.prepare(`INSERT INTO songs (title, spotify_track_id) VALUES (?, ?)`).run('Home', 'track_1')).toThrow()
+    })
+
+    it('rejects duplicate title when both have null spotify_track_id', () => {
+      db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_songs_title_trackid ON songs(title, COALESCE(spotify_track_id, ''))`)
+      db.prepare(`INSERT INTO songs (title) VALUES (?)`).run('Manual Song')
+      expect(() => db.prepare(`INSERT INTO songs (title) VALUES (?)`).run('Manual Song')).toThrow()
     })
   })
 

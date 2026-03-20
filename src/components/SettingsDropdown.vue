@@ -117,11 +117,6 @@
               </select>
             </label>
 
-            <!-- Label playlist sync toggle -->
-            <label class="setting-row">
-              <span>Sync labels to playlists</span>
-              <input type="checkbox" v-model="labelSyncEnabled" @change="saveLabelSync" />
-            </label>
 
             <!-- Sync button -->
             <button
@@ -177,7 +172,6 @@ const mosaicGenresInput = ref('')
 // Spotify
 const userPlaylists = ref([])
 const selectedPlaylist = ref('')
-const labelSyncEnabled = ref(false)
 const syncing = ref(false)
 const syncStatus = ref('')
 
@@ -282,14 +276,6 @@ async function saveSourcePlaylist() {
   await api.setSetting('spotify_source_playlist', selectedPlaylist.value)
 }
 
-async function loadLabelSync() {
-  const data = await api.getSetting('spotify_label_sync')
-  labelSyncEnabled.value = !!(data?.value ?? data)
-}
-
-async function saveLabelSync() {
-  await api.setSetting('spotify_label_sync', labelSyncEnabled.value)
-}
 
 async function triggerSync() {
   syncing.value = true
@@ -309,7 +295,6 @@ async function triggerSync() {
 onMounted(async () => {
   loadBandName()
   loadMosaicGenres()
-  loadLabelSync()
   if (props.spotifyConnected) {
     loadUserPlaylists()
     loadSourcePlaylist()

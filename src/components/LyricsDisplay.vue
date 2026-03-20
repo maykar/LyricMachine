@@ -101,7 +101,7 @@ function hasOverflow() {
   if (!wrapper) return false
   const cols = wrapper.querySelectorAll('.lyrics-col')
   for (const col of cols) {
-    if (col.scrollHeight > col.clientHeight + 2) return true
+    if (Math.ceil(col.scrollHeight) > Math.ceil(col.clientHeight)) return true
   }
   return false
 }

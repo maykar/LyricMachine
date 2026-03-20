@@ -156,7 +156,8 @@ describe('API route handlers', () => {
 
     it('returns 400 when title is missing', async () => {
       const res = await mock.callRoute('POST', '/api/songs', { lyrics: 'no title' })
-      expect(res._body.error).toBe('title required')
+      expect(res._status).toBe(400)
+      expect(res._body.error).toBeTruthy()
     })
   })
 
@@ -168,7 +169,8 @@ describe('API route handlers', () => {
 
     it('returns 400 when ids is not an array', async () => {
       const res = await mock.callRoute('PUT', '/api/songs/reorder', { ids: 'not-array' })
-      expect(res._body.error).toBe('ids array required')
+      expect(res._status).toBe(400)
+      expect(res._body.error).toBeTruthy()
     })
   })
 
@@ -182,13 +184,14 @@ describe('API route handlers', () => {
 
     it('returns 400 when field is missing', async () => {
       const res = await mock.callRoute('PUT', '/api/songs/bulk-update', { value: true })
-      expect(res._body.error).toBe('field required')
+      expect(res._status).toBe(400)
+      expect(res._body.error).toBeTruthy()
     })
 
     it('returns 400 for unknown field', async () => {
-      db.bulkUpdateField.mockReturnValue({ ok: false, error: 'Unknown field: fake' })
       const res = await mock.callRoute('PUT', '/api/songs/bulk-update', { field: 'fake', value: true })
-      expect(res._body.error).toContain('Unknown field')
+      expect(res._status).toBe(400)
+      expect(res._body.error).toBeTruthy()
     })
   })
 
@@ -197,6 +200,22 @@ describe('API route handlers', () => {
       const res = await mock.callRoute('PUT', '/api/songs/clear-chords', {})
       expect(db.clearAllChords).toHaveBeenCalled()
       expect(res._body.ok).toBe(true)
+    })
+  })
+
+  describe('PUT /api/songs/:id', () => {
+    it('updates a song with camelCase fields', async () => {
+      const updated = { id: 42, title: 'Updated', fontAdjust: 5 }
+      db.updateSong.mockReturnValue(updated)
+
+      const res = await mock.callRoute('PUT', '/api/songs/42', { fontAdjust: 5 })
+      expect(db.updateSong).toHaveBeenCalledWith(42, { fontAdjust: 5 })
+      expect(res._body).toEqual(updated)
+    })
+
+    it('returns 400 on validation error', async () => {
+      const res = await mock.callRoute('PUT', '/api/songs/42', { fontAdjust: 'not-a-number' })
+      expect(res._status).toBe(400)
     })
   })
 
@@ -216,7 +235,8 @@ describe('API route handlers', () => {
 
     it('returns 400 when body is not an array', async () => {
       const res = await mock.callRoute('POST', '/api/import', { not: 'array' })
-      expect(res._body.error).toBe('expected array')
+      expect(res._status).toBe(400)
+      expect(res._body.error).toBeTruthy()
     })
   })
 })

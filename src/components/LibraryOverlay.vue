@@ -357,11 +357,7 @@ function incrementPlayedFromCtx() {
       fav.playCount = (fav.playCount || 0) + 1
     }
     if (fav.id) {
-      fetch(`/api/songs/${fav.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ played: fav.played, playCount: fav.playCount }),
-      })
+      api.updateSong(fav.id, { played: fav.played, playCount: fav.playCount })
     }
     emit('updated')
   }
@@ -379,11 +375,7 @@ function editPlayCountFromCtx() {
         const fav = favorites.value[ctxMenu.index]
         fav.playCount = num
         if (fav.id) {
-          fetch(`/api/songs/${fav.id}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ playCount: num }),
-          })
+          api.updateSong(fav.id, { playCount: num })
         }
         emit('updated')
       }
@@ -397,11 +389,7 @@ function clearPlayCountFromCtx() {
     fav.playCount = 0
     fav.played = false
     if (fav.id) {
-      fetch(`/api/songs/${fav.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ playCount: 0, played: false }),
-      })
+      api.updateSong(fav.id, { playCount: 0, played: false })
     }
     emit('updated')
   }
@@ -712,6 +700,13 @@ useEventListener(document, 'click', closeFilterDropdown)
 useEventListener(document, 'click', closeContextMenu)
 useEventListener(document, 'keydown', onLibraryKeydown)
 
+// Re-measure on resize — set up observer outside onMounted to register
+// onUnmounted in sync setup context (not after await)
+let resizeObserver = null
+onUnmounted(() => {
+  if (resizeObserver) resizeObserver.disconnect()
+})
+
 onMounted(async () => {
   // Load filter preferences from server
   const filters = await api.getFilters()
@@ -728,9 +723,8 @@ onMounted(async () => {
   // Re-measure on resize
   const el = favContainerRef.value
   if (el) {
-    const ro = new ResizeObserver(() => recalcLayout())
-    ro.observe(el)
-    onUnmounted(() => ro.disconnect())
+    resizeObserver = new ResizeObserver(() => recalcLayout())
+    resizeObserver.observe(el)
   }
 })
 </script>

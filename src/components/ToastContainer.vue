@@ -60,7 +60,7 @@ const { toasts, dismissToast } = useToast()
 
 .toast--info {
   background: rgba(30, 30, 30, 0.92);
-  color: var(--text-primary, #e0e0e0);
+  color: var(--text-primary);
   border: 1px solid rgba(255, 255, 255, 0.15);
 }
 
