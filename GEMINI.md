@@ -31,7 +31,7 @@ LyricMachine helps musicians display song lyrics, chords, and Spotify playback d
 │   ├── utils.js             # spotifyFetch with retry + throw-on-exhaustion, re-exports shared/normalize
 │   ├── spotify.js           # Spotify client-credentials search + playlist sync
 │   ├── spotifyAuth.js       # Spotify Authorization Code flow (login, callback, token refresh)
-│   ├── spotifyPlaylists.js  # Label-based playlist sync engine + mutex guard + parallel lyrics fetch
+│   ├── spotifyPlaylists.js  # Source playlist sync engine + mutex guard + parallel lyrics fetch
 │   ├── chordParser.js       # HTML→chord parser (from UG pre.innerHTML)
 │   ├── ugImport.js          # Import/poll endpoints + bookmarklet page
 │   ├── bookmarklet.js       # Browser bookmarklet code
@@ -80,7 +80,7 @@ LyricMachine helps musicians display song lyrics, chords, and Spotify playback d
 │       └── useToast.js      # Singleton toast notifications — showToast(message, {type, duration}), auto-dismiss
 ├── tests/
 │   ├── shared/              # normalize, titleParser
-│   ├── server/              # db assertions, spotifyFetch, parseBody, chordParser, crypto
+│   ├── server/              # db assertions, spotifyFetch, parseBody, chordParser, crypto, authMiddleware
 │   ├── client/              # api client, useToast, useFavorites, useSettings
 │   └── components/          # LyricsDisplay algorithms
 └── public/
@@ -125,6 +125,22 @@ Dashboard (1)  ←→  Library (2)  ←→  Lyrics (3)
 
 All state lives in `useNavigation.js`. Keyboard shortcuts in `useKeyboard.js`.
 
+## Auth & Security
+
+- **API token auth** — `authMiddleware.js` validates Bearer token on all `/api/` routes
+- **Auto-generated token** — `API_TOKEN` created on first startup, persisted to `.env`
+- **Token bootstrap** — client fetches token via unauthenticated `GET /api/auth/token`
+- **CSRF origin check** — non-GET requests from foreign origins are rejected
+- **SKIP_AUTH endpoints** — `/api/spotify/callback`, `/api/auth/token`, `/api/import-raw`, `/api/bookmarklet`, `/api/bookmarklet.js` bypass auth (bookmarklet POSTs from external origin)
+- **Stale token retry** — api client retries once on 401 after clearing cached token (handles server restarts)
+
+## Input Validation
+
+- **Valibot schemas** — `server/validation.js` validates all API input with typed schemas
+- **Label values** — `fresh`, `getting-there`, `in-setlist` (hyphens, not underscores)
+- **BoolInt fields** — accepts both `true`/`false` and `0`/`1` for played, merge, separators, altColors, notInPlaylist
+- **customChords** — accepts string (legacy), array of section objects, or null
+
 ## Key Features
 
 ### Lyrics
@@ -162,14 +178,14 @@ All state lives in `useNavigation.js`. Keyboard shortcuts in `useKeyboard.js`.
 ### Spotify Integration
 - **Authorization Code flow** — user logs in via Spotify OAuth, tokens stored in SQLite
 - **Source playlist picker** — select which playlist to sync from via settings UI
-- **Label-based playlists** — auto-creates Spotify playlists per label ({bandName} — {Label}), lazy creation
-- **Bi-directional sync** — push local label changes to Spotify, pull Spotify changes to local
-- **Auto-sync triggers** — label change (5s debounce), kanban close (immediate), app startup, kanban open (30s cooldown)
+- **Source playlist sync** — imports songs from selected Spotify playlist, marks removed tracks
+- **Add to source** — re-add songs to source playlist via context menu
 - **Podcast filtering** — non-track items skipped during sync
 - **Embedded player** — iframe player with auto-lookup track ID, track ID caching, interaction-guarded pause (only sends toggle if user clicked play)
 
 ### API Client Architecture
 - **Centralized client** (`src/api.js`) — wraps every server endpoint; no direct `fetch()` calls in components
+- **Token management** — auto-fetches API token on first request, retries on 401 (stale token after restart)
 - **Error handling** — on failure: logs `console.error` AND shows a toast notification via `useToast`
 - **Toast notifications** — `ToastContainer.vue` renders stacked bottom-right notifications (error/success/info)
 
@@ -217,7 +233,7 @@ npm run test:watch          # Watch mode
 
 6 tiers of tests:
 - **Tier 1 — Pure functions**: `shared/normalize`, `titleParser`, `chordParser`
-- **Tier 2 — Server logic**: column-name assertions, `spotifyFetch` retry/throw, `parseBody` size limit
+- **Tier 2 — Server logic**: column-name assertions, `spotifyFetch` retry/throw, `parseBody` size limit, authMiddleware token/CSRF validation
 - **Tier 3 — Server integration**: DB schema + CRUD via in-memory SQLite, API route handlers with mock req/res
 - **Tier 4 — Client composables**: `api.js`, `useToast`, `useFavorites`, `useSettings`, `useNavigation`, `useKeyboard`, `useChords`, `useUGImport`, `usePlaylistSync`, `useSpotifyAuth`
 - **Tier 5 — Client utilities**: `adjustDropdown`
