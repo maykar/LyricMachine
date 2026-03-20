@@ -68,10 +68,11 @@ export function json(res, data, status = 200) {
   }
 }
 
-/** Extract ID from URL path like /api/songs/42 */
+/** Extract numeric ID from URL path like /api/songs/42 (handles trailing slashes and query strings) */
 function extractId(req) {
-  const parts = req.url.split('/')
-  return parseInt(parts[parts.length - 1], 10)
+  const path = req.url.split('?')[0].replace(/\/+$/, '')
+  const match = path.match(/\/(\d+)$/)
+  return match ? parseInt(match[1], 10) : NaN
 }
 
 // --- Cached default browser detection (runs once) ---

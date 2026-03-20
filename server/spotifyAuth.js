@@ -1,5 +1,6 @@
 import crypto from 'crypto'
 import * as db from './db.js'
+import { encrypt, decrypt } from './crypto.js'
 
 const SCOPES = 'playlist-modify-public playlist-modify-private playlist-read-private'
 
@@ -86,11 +87,11 @@ export function setupSpotifyAuthRoutes(server, { get, post, json }) {
       const profile = await profileRes.json()
 
       // Store tokens + profile
-      db.setSetting('spotify_tokens', {
+      db.setSetting('spotify_tokens', encrypt({
         access_token: tokenData.access_token,
         refresh_token: tokenData.refresh_token,
         expires_at: Date.now() + tokenData.expires_in * 1000,
-      })
+      }))
       db.setSetting('spotify_user', {
         id: profile.id,
         displayName: profile.display_name || profile.id,
@@ -108,7 +109,7 @@ export function setupSpotifyAuthRoutes(server, { get, post, json }) {
 
   // GET /api/spotify/status — check connection status
   get(server, '/api/spotify/status', (req, res) => {
-    const tokens = db.getSetting('spotify_tokens')
+    const tokens = decrypt(db.getSetting('spotify_tokens'))
     const user = db.getSetting('spotify_user')
     if (tokens && user) {
       json(res, { connected: true, displayName: user.displayName, userId: user.id })
@@ -134,7 +135,7 @@ export function setupSpotifyAuthRoutes(server, { get, post, json }) {
  * Auto-refreshes if expired. Returns null if not connected.
  */
 export async function getUserToken() {
-  const tokens = db.getSetting('spotify_tokens')
+  const tokens = decrypt(db.getSetting('spotify_tokens'))
   if (!tokens) return null
 
   // Still valid (with 60s buffer)
@@ -174,7 +175,7 @@ export async function getUserToken() {
       refresh_token: data.refresh_token || tokens.refresh_token,
       expires_at: Date.now() + data.expires_in * 1000,
     }
-    db.setSetting('spotify_tokens', updated)
+    db.setSetting('spotify_tokens', encrypt(updated))
     return updated.access_token
   } catch (err) {
     console.error('Spotify token refresh error:', err.message)

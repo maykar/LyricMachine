@@ -155,5 +155,13 @@ describe('api client', () => {
       expect(url).toBe('/api/songs/clear-chords')
       expect(opts.method).toBe('PUT')
     })
+
+    it('reorderSongs sends PUT to /api/songs/reorder', async () => {
+      await api.reorderSongs([3, 1, 2])
+      const [url, opts] = fetch.mock.calls[0]
+      expect(url).toBe('/api/songs/reorder')
+      expect(opts.method).toBe('PUT')
+      expect(JSON.parse(opts.body)).toEqual({ ids: [3, 1, 2] })
+    })
   })
 })

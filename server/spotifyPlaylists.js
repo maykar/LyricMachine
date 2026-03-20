@@ -198,6 +198,10 @@ async function syncLabelPlaylists(userId, bandName) {
   let pushed = 0
   let imported = 0
 
+  // Process labels sequentially — Spotify's API has rate limits and concurrent
+  // mutations to label playlists (add/remove tracks) can race. Unlike source
+  // playlist sync (which batch-fetches lyrics in parallel), label sync modifies
+  // Spotify state per-label, so sequential processing is intentionally correct.
   for (const [labelKey, labelDisplayName] of Object.entries(LABEL_NAMES)) {
     // Songs with this label that have Spotify track IDs
     const labelSongs = songs.filter(s => s.label === labelKey && s.spotifyTrackId)

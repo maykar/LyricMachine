@@ -35,7 +35,8 @@ LyricMachine helps musicians display song lyrics, chords, and Spotify playback d
 │   ├── chordParser.js       # HTML→chord parser (from UG pre.innerHTML)
 │   ├── ugImport.js          # Import/poll endpoints + bookmarklet page
 │   ├── bookmarklet.js       # Browser bookmarklet code
-│   └── popularArt.js        # Dashboard album art mosaic helper (genres configurable via settings)
+│   ├── popularArt.js        # Dashboard album art mosaic helper (genres configurable via settings)
+│   └── crypto.js            # AES-256-GCM encrypt/decrypt for Spotify tokens, auto-generates key
 ├── src/
 │   ├── App.vue              # Root component — wires all features together
 │   ├── api.js               # Centralized API client — wraps every server endpoint, errors → console + toast
@@ -76,7 +77,7 @@ LyricMachine helps musicians display song lyrics, chords, and Spotify playback d
 │       └── useToast.js      # Singleton toast notifications — showToast(message, {type, duration}), auto-dismiss
 ├── tests/
 │   ├── shared/              # normalize, titleParser
-│   ├── server/              # db assertions, spotifyFetch, parseBody, chordParser
+│   ├── server/              # db assertions, spotifyFetch, parseBody, chordParser, crypto
 │   ├── client/              # api client, useToast, useFavorites, useSettings
 │   └── components/          # LyricsDisplay algorithms
 └── public/
@@ -237,9 +238,40 @@ When adding new features, add tests in the appropriate `tests/` subdirectory.
 - **NEVER** write code that can delete all rows from a production table. If bulk deletion is needed, require explicit confirmation or a safety flag.
 - **ALWAYS** consider what happens if your code runs against a database with real user data.
 
+## Code Review via Gemini CLI
+
+Gemini CLI is installed globally and authenticated with the user's Google AI Ultra account. Use it for code review with **full codebase context** by running it via `run_command`.
+
+### How to use
+
+1. Write the review prompt (including any diff) to a temp file
+2. Run Gemini CLI from the **project root** so `@.` reads all non-gitignored files:
+
+```powershell
+$p = Get-Content -Raw 'C:\Users\theme\AppData\Local\Temp\review-prompt.txt'; gemini -m flash -p $p 2>$null | Tee-Object -FilePath 'C:\Users\theme\AppData\Local\Temp\review-output.txt'
+```
+
+3. Read the output file with `view_file` and present the review to the user
+
+The prompt should include:
+- Instructions to review for bugs, security, performance, style, and testing
+- `@.` reference for full codebase context
+- The diff (if reviewing specific changes) or a request for holistic review
+- Any extra focus areas from the user
+
+### When to use
+
+- **After completing significant work** — automatically run a review before notifying the user. Generate a `git diff HEAD` and pass it as the `diff`. This is NOT optional — always do this after major changes.
+- User says `/code-review` → follow `.agent/workflows/code-review.md`
+- User asks for a "code review", "review my changes", "review the codebase", etc.
+
+### Model selection
+
+- `flash` — default, fast reviews
+- `gemini-3.1-pro` — thorough reviews when the user requests it
+
 ## Agent Tooling Notes
 
 > **`grep_search` bug**: Single-file `SearchPath` always returns "No results found". Use **directory** as `SearchPath` + `Includes` glob to filter. Example: `SearchPath: src/components`, `Includes: ["SongRandomizer.vue"]`.
 
 > **No browser agent**: Do NOT use the `browser_subagent` tool. It is unreliable and wastes time. Test locally or ask the user to verify.
-
