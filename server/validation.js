@@ -9,7 +9,7 @@
 import * as v from 'valibot'
 
 // --- Shared field schemas ---
-const Label = v.optional(v.picklist(['fresh', 'getting-there', 'in-setlist']))
+const Label = v.optional(v.picklist(['fresh', 'getting-there', 'in-setlist', 'ignored']))
 const BoolInt = v.optional(v.union([
   v.boolean(),
   v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(1)),

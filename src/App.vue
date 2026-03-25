@@ -87,6 +87,7 @@
         @open-kanban="openKanban"
         @open-library="goToPage('library')"
         @toggle-settings="toggleModal('settings')"
+        @updated="onLibraryUpdated"
       />
     </div>
 
@@ -123,6 +124,7 @@
       v-if="isModalOpen('randomizer')"
       :favorites="favorites"
       @select="onRandomizerSelect"
+      @updated="onLibraryUpdated"
       @close="closeModal('randomizer')"
     />
 

@@ -31,8 +31,8 @@ describe('ContextMenu', () => {
   it('renders all 3 label options', () => {
     const wrapper = mount(ContextMenu, { props: defaultProps })
     const options = wrapper.findAll('.ctx-option')
-    // Fresh, Getting There, In Setlist + Played + Edit Count + Clear Count + Remove = 7
-    expect(options.length).toBeGreaterThanOrEqual(7)
+    // Ignored, Fresh, Getting There, In Setlist + Played + Edit Count + Clear Count + Remove = 8
+    expect(options.length).toBeGreaterThanOrEqual(8)
   })
 
   it('marks active label', () => {
@@ -45,8 +45,8 @@ describe('ContextMenu', () => {
   it('emits set-label on label click', async () => {
     const wrapper = mount(ContextMenu, { props: defaultProps })
     const options = wrapper.findAll('.ctx-option')
-    // Click "Getting There" (index 1)
-    await options[1].trigger('click')
+    // Click "Getting There" (index 2, after Ignored and Fresh)
+    await options[2].trigger('click')
     expect(wrapper.emitted('set-label')?.[0][0]).toBe('getting-there')
   })
 

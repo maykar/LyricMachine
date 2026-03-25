@@ -65,6 +65,7 @@
             :key="'r-' + song.title"
             class="song-card"
             @click="$emit('select', song)"
+            @contextmenu="onSongContextMenu($event, song)"
           >
             <img v-if="song.albumArt" :src="song.albumArt" class="song-art" alt="" />
             <div v-else class="song-art-placeholder">♪</div>
@@ -83,6 +84,7 @@
             :key="'m-' + song.title"
             class="song-card"
             @click="$emit('select', song)"
+            @contextmenu="onSongContextMenu($event, song)"
           >
             <img v-if="song.albumArt" :src="song.albumArt" class="song-art" alt="" />
             <div v-else class="song-art-placeholder">♪</div>
@@ -100,12 +102,29 @@
     <div v-if="totalSongs === 0" class="dashboard-empty">
       <div class="hint">Press Space to open your library</div>
     </div>
+
+    <!-- Context menu (teleported to body — CSS filter/backdrop-filter on Dashboard ancestors break position:fixed) -->
+    <Teleport to="body">
+      <ContextMenu
+        :show="ctxMenu.show"
+        :x="ctxMenu.x"
+        :y="ctxMenu.y"
+        :fav="ctxMenu.fav"
+        @set-label="setLabelFromCtx"
+        @toggle-played="togglePlayedFromCtx"
+        @edit-count="editCountFromCtx"
+        @clear-count="clearCountFromCtx"
+        @delete="deleteFromCtx"
+        @close="closeCtxMenu"
+      />
+    </Teleport>
   </div>
 </template>
 
 <script setup>
-import { computed, ref, watch, onMounted, onUnmounted, nextTick } from 'vue'
+import { computed, reactive, ref, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import MdiIcon from './MdiIcon.vue'
+import ContextMenu from './ContextMenu.vue'
 import { mdiMagnify, mdiCog } from '@mdi/js'
 
 import { splitTitle } from '../utils/titleParser.js'
@@ -115,7 +134,7 @@ const props = defineProps({
   favorites: { type: Array, default: () => [] },
 })
 
-defineEmits(['select', 'open-kanban', 'open-library', 'toggle-settings'])
+const emit = defineEmits(['select', 'open-kanban', 'open-library', 'toggle-settings', 'updated'])
 
 const totalSongs = computed(() => props.favorites.length)
 
@@ -125,7 +144,7 @@ const labelColors = Object.fromEntries(LABEL_OPTIONS.map(o => [o.value, o.color]
 const labelNames = Object.fromEntries(LABEL_OPTIONS.map(o => [o.value, o.name]))
 
 const labelSegments = computed(() => {
-  const counts = { fresh: 0, 'getting-there': 0, 'in-setlist': 0 }
+  const counts = { fresh: 0, 'getting-there': 0, 'in-setlist': 0, ignored: 0 }
   for (const f of props.favorites) counts[f.label || 'fresh']++
   const total = props.favorites.length || 1
   return Object.entries(counts)
@@ -137,6 +156,82 @@ const labelSegments = computed(() => {
       pct: (count / total) * 100,
     }))
 })
+
+// --- Context menu ---
+const ctxMenu = reactive({ show: false, x: 0, y: 0, fav: null })
+
+function onSongContextMenu(e, song) {
+  if (e.ctrlKey) return
+  e.preventDefault()
+  ctxMenu.x = e.clientX
+  ctxMenu.y = e.clientY
+  ctxMenu.fav = song
+  ctxMenu.show = true
+}
+
+function closeCtxMenu() { ctxMenu.show = false }
+
+function setLabelFromCtx(label) {
+  const fav = ctxMenu.fav
+  if (fav) {
+    fav.label = label
+    if (fav.id) api.updateSong(fav.id, { label })
+    emit('updated')
+  }
+  ctxMenu.show = false
+}
+
+function togglePlayedFromCtx() {
+  const fav = ctxMenu.fav
+  if (fav) {
+    fav.played = !fav.played
+    if (fav.played) fav.playCount = (fav.playCount || 0) + 1
+    if (fav.id) api.updateSong(fav.id, { played: fav.played, playCount: fav.playCount })
+    emit('updated')
+  }
+  ctxMenu.show = false
+}
+
+function editCountFromCtx() {
+  ctxMenu.show = false
+  const fav = ctxMenu.fav
+  if (!fav) return
+  const input = prompt('Set play count:', String(fav.playCount || 0))
+  if (input !== null) {
+    const num = parseInt(input, 10)
+    if (!isNaN(num) && num >= 0) {
+      fav.playCount = num
+      if (fav.id) api.updateSong(fav.id, { playCount: num })
+      emit('updated')
+    }
+  }
+}
+
+function clearCountFromCtx() {
+  const fav = ctxMenu.fav
+  if (fav) {
+    fav.playCount = 0
+    fav.played = false
+    if (fav.id) api.updateSong(fav.id, { playCount: 0, played: false })
+    emit('updated')
+  }
+  ctxMenu.show = false
+}
+
+function deleteFromCtx() {
+  ctxMenu.show = false
+  const fav = ctxMenu.fav
+  if (!fav) return
+  const { track } = splitTitle(fav.title)
+  if (confirm(`Remove "${track || fav.title}" from favorites?`)) {
+    const idx = props.favorites.indexOf(fav)
+    if (idx >= 0) {
+      props.favorites.splice(idx, 1)
+      if (fav.id) api.deleteSong(fav.id)
+      emit('updated')
+    }
+  }
+}
 
 const MAX_SONG_ITEMS = 10
 

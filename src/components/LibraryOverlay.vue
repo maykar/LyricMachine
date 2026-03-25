@@ -45,6 +45,10 @@
                 <input type="checkbox" v-model="filterInSetlist" />
                 <span class="filter-label-dot" style="--lc:#2ecc71">In Setlist</span>
               </label>
+              <label class="filter-item">
+                <input type="checkbox" v-model="filterIgnored" />
+                <span class="filter-label-dot" style="--lc:#7f8c8d">Ignored</span>
+              </label>
               <div class="filter-divider"></div>
               <label class="filter-item">
                 <input type="checkbox" v-model="filterNotInPlaylist" />
@@ -240,6 +244,7 @@ const filterNoChords = ref(false)
 const filterFresh = ref(false)
 const filterGettingThere = ref(false)
 const filterInSetlist = ref(false)
+const filterIgnored = ref(false)
 const filterNotInPlaylist = ref(false)
 const showFilterDropdown = ref(false)
 const sortBy = ref('none')
@@ -405,6 +410,7 @@ const activeFilterCount = computed(() => {
   if (filterFresh.value) count++
   if (filterGettingThere.value) count++
   if (filterInSetlist.value) count++
+  if (filterIgnored.value) count++
   if (filterNotInPlaylist.value) count++
   return count
 })
@@ -501,18 +507,22 @@ const displayedFavorites = computed(() => {
   if (hidePlayed.value) list = list.filter(f => !f.played)
   if (filterNoChords.value) list = list.filter(f => !f.customChords || f.customChords.length === 0)
   if (filterNotInPlaylist.value) list = list.filter(f => !!f.notInPlaylist)
-  const anyLabel = filterFresh.value || filterGettingThere.value || filterInSetlist.value
+  const anyLabel = filterFresh.value || filterGettingThere.value || filterInSetlist.value || filterIgnored.value
   if (anyLabel) {
     list = list.filter(f => {
       const lbl = f.label || 'fresh'
       if (filterFresh.value && lbl === 'fresh') return true
       if (filterGettingThere.value && lbl === 'getting-there') return true
       if (filterInSetlist.value && lbl === 'in-setlist') return true
+      if (filterIgnored.value && lbl === 'ignored') return true
       return false
     })
+  } else {
+    // Hide ignored songs by default when no label filters are active
+    list = list.filter(f => f.label !== 'ignored')
   }
   if (sortBy.value !== 'none') {
-    const labelOrder = { 'fresh': 0, 'getting-there': 1, 'in-setlist': 2 }
+    const labelOrder = { 'fresh': 0, 'getting-there': 1, 'in-setlist': 2, 'ignored': 3 }
     list = [...list].sort((a, b) => {
       let cmp = 0
       if (sortBy.value === 'alpha') {

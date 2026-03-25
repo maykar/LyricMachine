@@ -28,6 +28,10 @@
             <input type="checkbox" value="in-setlist" v-model="activeFilters" />
             <span class="filter-label-dot" style="--lc:#2ecc71">In Setlist</span>
           </label>
+          <label class="filter-check-item">
+            <input type="checkbox" value="ignored" v-model="activeFilters" />
+            <span class="filter-label-dot" style="--lc:#7f8c8d">Ignored</span>
+          </label>
         </div>
       </div>
 
@@ -48,6 +52,7 @@
             }"
             :style="{ width: (landed && i === winnerRenderIndex ? cardWidth * 2 : cardWidth) + 'px' }"
             @click="landed && i === winnerRenderIndex && $emit('select', item.fav)"
+            @contextmenu="landed && i === winnerRenderIndex && onWinnerContextMenu($event, item.fav)"
           >
             <!-- Winner celebration layers -->
             <template v-if="landed && i === winnerRenderIndex">
@@ -120,15 +125,30 @@
       <div class="firework firework-4"></div>
     </div>
 
+    <!-- Winner context menu -->
+    <ContextMenu
+      :show="ctxMenu.show"
+      :x="ctxMenu.x"
+      :y="ctxMenu.y"
+      :fav="ctxMenu.fav"
+      @set-label="setLabelFromCtx"
+      @toggle-played="togglePlayedFromCtx"
+      @edit-count="editCountFromCtx"
+      @clear-count="clearCountFromCtx"
+      @delete="deleteFromCtx"
+      @close="closeCtxMenu"
+    />
+
     <!-- Confetti canvas (full-screen, above everything) -->
     <canvas ref="confettiCanvas" class="confetti-canvas"></canvas>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, reactive, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useEventListener } from '@vueuse/core'
 import MdiIcon from './MdiIcon.vue'
+import ContextMenu from './ContextMenu.vue'
 import { mdiClose, mdiCog } from '@mdi/js'
 import confettiModule from 'canvas-confetti'
 import { adjustDropdown } from '../utils/adjustDropdown.js'
@@ -138,7 +158,7 @@ const props = defineProps({
   favorites: { type: Array, required: true },
 })
 
-const emit = defineEmits(['close', 'select'])
+const emit = defineEmits(['close', 'select', 'updated'])
 
 const viewportRef = ref(null)
 const trackRef = ref(null)
@@ -185,7 +205,6 @@ const filterPanelRef = ref(null)
 watch(showFilterPanel, (v) => { if (v) adjustDropdown(filterPanelRef) })
 
 const filteredFavorites = computed(() => {
-  if (!activeFilters.value.length) return props.favorites
   let list = props.favorites
   const filters = activeFilters.value
 
@@ -198,6 +217,9 @@ const filteredFavorites = computed(() => {
   const labelFilters = filters.filter(f => f !== 'unplayed')
   if (labelFilters.length) {
     list = list.filter(f => labelFilters.includes(f.label || 'fresh'))
+  } else {
+    // Exclude ignored songs by default when no label filters are active
+    list = list.filter(f => f.label !== 'ignored')
   }
 
   return list.length >= 2 ? list : props.favorites
@@ -685,6 +707,74 @@ function onBackdropUp() {
 }
 
 function closeFilterPanel() { showFilterPanel.value = false }
+
+// --- Winner context menu ---
+const ctxMenu = reactive({ show: false, x: 0, y: 0, fav: null })
+
+function onWinnerContextMenu(e, fav) {
+  if (e.ctrlKey) return
+  e.preventDefault()
+  ctxMenu.x = e.clientX
+  ctxMenu.y = e.clientY
+  ctxMenu.fav = fav
+  ctxMenu.show = true
+}
+
+function closeCtxMenu() { ctxMenu.show = false }
+
+function setLabelFromCtx(label) {
+  const fav = ctxMenu.fav
+  if (fav) {
+    fav.label = label
+    if (fav.id) api.updateSong(fav.id, { label })
+    emit('updated')
+  }
+  ctxMenu.show = false
+}
+
+function togglePlayedFromCtx() {
+  const fav = ctxMenu.fav
+  if (fav) {
+    fav.played = !fav.played
+    if (fav.played) fav.playCount = (fav.playCount || 0) + 1
+    if (fav.id) api.updateSong(fav.id, { played: fav.played, playCount: fav.playCount })
+    emit('updated')
+  }
+  ctxMenu.show = false
+}
+
+function editCountFromCtx() {
+  ctxMenu.show = false
+  const fav = ctxMenu.fav
+  if (!fav) return
+  const input = prompt('Set play count:', String(fav.playCount || 0))
+  if (input !== null) {
+    const num = parseInt(input, 10)
+    if (!isNaN(num) && num >= 0) {
+      fav.playCount = num
+      if (fav.id) api.updateSong(fav.id, { playCount: num })
+      emit('updated')
+    }
+  }
+}
+
+function clearCountFromCtx() {
+  const fav = ctxMenu.fav
+  if (fav) {
+    fav.playCount = 0
+    fav.played = false
+    if (fav.id) api.updateSong(fav.id, { playCount: 0, played: false })
+    emit('updated')
+  }
+  ctxMenu.show = false
+}
+
+function deleteFromCtx() {
+  ctxMenu.show = false
+  // Don't allow delete from randomizer — just close the menu
+}
+
+useEventListener(document, 'click', closeCtxMenu)
 
 function onKeydown(e) {
   if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return

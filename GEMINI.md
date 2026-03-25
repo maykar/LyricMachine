@@ -47,7 +47,7 @@ LyricMachine helps musicians display song lyrics, chords, and Spotify playback d
 │   ├── style.css            # Global styles
 │   ├── style-tokens.css     # Design tokens (colors, spacing, radii, etc.)
 │   ├── constants/
-│   │   └── labels.js        # Kanban label definitions (Fresh/Getting There/In Setlist)
+│   │   └── labels.js        # Kanban label definitions (Ignored/Fresh/Getting There/In Setlist)
 │   ├── utils/
 │   │   ├── normalize.js     # Re-exports shared/normalize.js
 │   │   ├── titleParser.js   # Title normalization + "Artist — Track" splitting
@@ -56,9 +56,9 @@ LyricMachine helps musicians display song lyrics, chords, and Spotify playback d
 │   │   ├── TopBar.vue       # Header: font controls, edit, search, played, label, star, page indicator (lyrics page only)
 │   │   ├── LyricsDisplay.vue# Multi-column (2–3) lyrics with auto-fit font, pagination, merge, collapse repeats, alt colors, separators
 │   │   ├── LibraryOverlay.vue# Library page: search lrclib, favorites grid (3–4 cols), drag-and-drop reorder, context menu, filters, sort, new song form
-│   │   ├── Dashboard.vue    # Home page: album art mosaic, recently added, most played (dynamic height), label breakdown bar
-│   │   ├── KanbanView.vue   # Kanban board modal for song categorization with drag-and-drop, confetti, party sound
-│   │   ├── SongRandomizer.vue# Slot-machine random song picker modal with carousel animation, celebrations
+│   │   ├── Dashboard.vue    # Home page: album art mosaic, recently added, most played (dynamic height), label breakdown bar, context menu
+│   │   ├── KanbanView.vue   # Kanban board modal for song categorization with drag-and-drop, context menu, settings cog, confetti, party sound
+│   │   ├── SongRandomizer.vue# Slot-machine random song picker modal with carousel animation, celebrations, winner context menu
 │   │   ├── ChordDrawer.vue  # Collapsible chord chart footer with transpose, edit mode, capo display
 │   │   ├── SettingsDropdown.vue# Settings modal: defaults, Spotify connection, band name, mosaic genres, source playlist, sync, backup/restore
 │   │   ├── SpotifyPlayer.vue# Embedded Spotify player via iframe, interaction-guarded pause
@@ -137,7 +137,7 @@ All state lives in `useNavigation.js`. Keyboard shortcuts in `useKeyboard.js`.
 ## Input Validation
 
 - **Valibot schemas** — `server/validation.js` validates all API input with typed schemas
-- **Label values** — `fresh`, `getting-there`, `in-setlist` (hyphens, not underscores)
+- **Label values** — `ignored`, `fresh`, `getting-there`, `in-setlist` (hyphens, not underscores)
 - **BoolInt fields** — accepts both `true`/`false` and `0`/`1` for played, merge, separators, altColors, notInPlaylist
 - **customChords** — accepts string (legacy), array of section objects, or null
 
@@ -190,11 +190,13 @@ All state lives in `useNavigation.js`. Keyboard shortcuts in `useKeyboard.js`.
 - **Toast notifications** — `ToastContainer.vue` renders stacked bottom-right notifications (error/success/info)
 
 ### Song Management
-- **Three labels** — Fresh (red), Getting There (yellow), In Setlist (green)
+- **Four labels** — Ignored (gray, hidden by default), Fresh (red), Getting There (yellow), In Setlist (green)
+- **Ignored label behavior** — songs labeled Ignored are hidden from library and randomizer by default; visible via filter checkboxes
 - **Play tracking** — toggle played status with increment play count, display count
 - **Per-song settings** — font size offset, merge, separators, alt colors — all saved per favorite
-- **Kanban board** — drag songs between label columns, confetti + party sound; click title for randomized TTS "KANBAN!" (5% chance Easter egg phrase)
-- **Song randomizer** — slot-machine carousel with tick sounds, Spotify autoplay, gold confetti, impact sound, celebrations; Space to spin
+- **Kanban board** — drag songs between label columns, settings cog to show/hide Ignored column, context menu on cards, confetti + party sound; click title for randomized TTS "KANBAN!" (5% chance Easter egg phrase)
+- **Song randomizer** — slot-machine carousel with tick sounds, Spotify autoplay, gold confetti, impact sound, celebrations; Space to spin; right-click winner for context menu
+- **Context menus** — right-click context menu available on library cards, dashboard song cards, kanban cards, and randomizer winner (label, played, play count, delete)
 
 ### Keyboard Shortcuts
 | Key | Dashboard | Lyrics | Library |

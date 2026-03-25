@@ -2,11 +2,24 @@
   <div class="overlay-backdrop kanban-backdrop" @mousedown.self="backdropDown = true" @mouseup.self="onBackdropUp">
     <div class="modal-panel kanban-panel">
       <button class="close-btn close-btn--danger" @click="$emit('close')" title="Close"><MdiIcon :path="mdiClose" :size="18" /></button>
+
+      <!-- Settings cog -->
+      <div class="kanban-settings">
+        <button class="kanban-settings-btn" @click.stop="showSettingsPanel = !showSettingsPanel" title="Settings">
+          <MdiIcon :path="mdiCog" :size="18" />
+        </button>
+        <div v-if="showSettingsPanel" class="kanban-settings-panel" @click.stop>
+          <button class="kanban-settings-item" @click="showIgnored = !showIgnored">
+            {{ showIgnored ? 'Hide Ignored' : 'Show Ignored' }}
+          </button>
+        </div>
+      </div>
+
       <h2 class="kanban-title" data-text="KANBAN!" @click="sayKanban">KANBAN!</h2>
 
       <div class="kanban-columns">
         <div
-          v-for="col in columns" :key="col.value"
+          v-for="col in visibleColumns" :key="col.value"
           class="kanban-col"
           :style="{ '--col-color': col.color }"
           @dragover.prevent="onDragOver(col.value)"
@@ -26,6 +39,7 @@
               draggable="true"
               @dragstart="onDragStart(item, $event)"
               @dragend="onDragEnd"
+              @contextmenu="onCardContextMenu($event, item)"
             >
               <span class="kanban-card-artist text-truncate">{{ splitTitle(item.title).artist }}</span>
               <span class="kanban-card-track text-truncate">{{ splitTitle(item.title).track }}</span>
@@ -38,20 +52,37 @@
       </div>
     </div>
 
+    <!-- Context menu -->
+    <ContextMenu
+      :show="ctxMenu.show"
+      :x="ctxMenu.x"
+      :y="ctxMenu.y"
+      :fav="ctxMenu.fav"
+      @set-label="setLabelFromCtx"
+      @toggle-played="togglePlayedFromCtx"
+      @edit-count="editCountFromCtx"
+      @clear-count="clearCountFromCtx"
+      @delete="deleteFromCtx"
+      @close="closeCtxMenu"
+    />
+
     <!-- Confetti canvas -->
     <canvas ref="confettiCanvas" class="confetti-canvas"></canvas>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import confettiModule from 'canvas-confetti'
 import MdiIcon from './MdiIcon.vue'
-import { mdiClose } from '@mdi/js'
+import ContextMenu from './ContextMenu.vue'
+import { mdiClose, mdiCog } from '@mdi/js'
 
 import { splitTitle } from '../utils/titleParser.js'
 import { LABEL_OPTIONS } from '../constants/labels.js'
 import { api } from '../api.js'
+import { adjustDropdown } from '../utils/adjustDropdown.js'
+import { useEventListener } from '@vueuse/core'
 
 const props = defineProps({
   favorites: { type: Array, required: true },
@@ -59,7 +90,92 @@ const props = defineProps({
 
 const emit = defineEmits(['update', 'close'])
 
+// --- Context menu ---
+const ctxMenu = reactive({ show: false, x: 0, y: 0, fav: null })
+
+function onCardContextMenu(e, item) {
+  if (e.ctrlKey) return
+  e.preventDefault()
+  ctxMenu.x = e.clientX
+  ctxMenu.y = e.clientY
+  ctxMenu.fav = item
+  ctxMenu.show = true
+}
+
+function closeCtxMenu() { ctxMenu.show = false }
+
+function setLabelFromCtx(label) {
+  const fav = ctxMenu.fav
+  if (fav) {
+    fav.label = label
+    if (fav.id) api.updateSong(fav.id, { label })
+    emit('update', [...props.favorites])
+  }
+  ctxMenu.show = false
+}
+
+function togglePlayedFromCtx() {
+  const fav = ctxMenu.fav
+  if (fav) {
+    fav.played = !fav.played
+    if (fav.played) fav.playCount = (fav.playCount || 0) + 1
+    if (fav.id) api.updateSong(fav.id, { played: fav.played, playCount: fav.playCount })
+    emit('update', [...props.favorites])
+  }
+  ctxMenu.show = false
+}
+
+function editCountFromCtx() {
+  ctxMenu.show = false
+  const fav = ctxMenu.fav
+  if (!fav) return
+  const input = prompt('Set play count:', String(fav.playCount || 0))
+  if (input !== null) {
+    const num = parseInt(input, 10)
+    if (!isNaN(num) && num >= 0) {
+      fav.playCount = num
+      if (fav.id) api.updateSong(fav.id, { playCount: num })
+      emit('update', [...props.favorites])
+    }
+  }
+}
+
+function clearCountFromCtx() {
+  const fav = ctxMenu.fav
+  if (fav) {
+    fav.playCount = 0
+    fav.played = false
+    if (fav.id) api.updateSong(fav.id, { playCount: 0, played: false })
+    emit('update', [...props.favorites])
+  }
+  ctxMenu.show = false
+}
+
+function deleteFromCtx() {
+  ctxMenu.show = false
+  const fav = ctxMenu.fav
+  if (!fav) return
+  const { track } = splitTitle(fav.title)
+  if (confirm(`Remove "${track || fav.title}" from favorites?`)) {
+    const idx = props.favorites.indexOf(fav)
+    if (idx >= 0) {
+      props.favorites.splice(idx, 1)
+      if (fav.id) api.deleteSong(fav.id)
+      emit('update', [...props.favorites])
+    }
+  }
+}
+
 const columns = LABEL_OPTIONS
+const showIgnored = ref(false)
+const showSettingsPanel = ref(false)
+
+const visibleColumns = computed(() =>
+  showIgnored.value ? columns : columns.filter(c => c.value !== 'ignored')
+)
+
+function closeSettingsPanel() { showSettingsPanel.value = false }
+useEventListener(document, 'click', closeSettingsPanel)
 
 const backdropDown = ref(false)
 const dragOverCol = ref(null)
@@ -195,6 +311,59 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+
+.kanban-settings {
+  position: absolute;
+  top: 1rem;
+  left: 1rem;
+  z-index: 10;
+}
+
+.kanban-settings-btn {
+  background: none;
+  border: none;
+  color: var(--text-faint);
+  cursor: pointer;
+  padding: 0.2rem 0.5rem;
+  transition: color var(--speed-fast);
+}
+
+.kanban-settings-btn:hover {
+  color: var(--text-muted);
+}
+
+.kanban-settings-panel {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: var(--space-sm);
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--space-md) 0;
+  min-width: 10rem;
+  z-index: 20;
+}
+
+.kanban-settings-item {
+  display: block;
+  width: 100%;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  padding: 0.45rem 1rem;
+  cursor: pointer;
+  font-size: var(--font-sm);
+  font-family: inherit;
+  text-align: left;
+  white-space: nowrap;
+  transition: background var(--speed-fast), color var(--speed-fast);
+}
+
+.kanban-settings-item:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
 
 .kanban-panel {
   background: var(--bg-app);
