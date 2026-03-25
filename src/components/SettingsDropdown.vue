@@ -4,130 +4,140 @@
       <button class="close-btn" @click="$emit('close')" title="Close"><MdiIcon :path="mdiClose" :size="18" /></button>
 
       <div class="settings-columns">
-        <!-- Column 1: Defaults -->
+        <!-- Column 1: Display + Shortcuts -->
         <div class="settings-col">
-          <div class="settings-section-title">Defaults for new songs</div>
-          <label class="setting-row">
-            <span>Alternating colors</span>
-            <input type="checkbox" v-model="defaults.altColors" @change="$emit('save-defaults')" />
-          </label>
-          <label class="setting-row">
-            <span>Section separators</span>
-            <input type="checkbox" v-model="defaults.separators" @change="$emit('save-defaults')" />
-          </label>
-          <label class="setting-row">
-            <span>Line merging</span>
-            <input type="checkbox" v-model="defaults.merge" @change="$emit('save-defaults')" />
-          </label>
-          <button class="accent-btn apply-all-btn" @click="$emit('apply-defaults-to-all')">Apply defaults to all</button>
-          <span v-if="applyStatus" class="apply-status">{{ applyStatus }}</span>
-          <button class="accent-btn accent-btn--danger apply-all-btn" @click="onClearChords">
-            {{ confirmClearChords ? 'Are you sure?' : 'Clear all chords' }}
-          </button>
-          <span v-if="resetChordStatus" class="apply-status">{{ resetChordStatus }}</span>
-          <button class="accent-btn apply-all-btn" @click="$emit('clear-played-status')">Clear played status</button>
-          <button class="accent-btn apply-all-btn" @click="openBookmarklet">UG Import bookmarklet</button>
-
-          <div class="settings-divider"></div>
-          <div class="settings-section-title">Data</div>
-          <div class="backup-row">
-            <button class="accent-btn apply-all-btn" @click="exportBackup">↓ Backup</button>
-            <button class="accent-btn apply-all-btn" @click="restoreFileInput?.click()">↑ Restore</button>
-          </div>
-          <span v-if="restoreStatus" class="apply-status">{{ restoreStatus }}</span>
-          <input
-            ref="restoreFileInput"
-            type="file"
-            accept=".json"
-            style="display: none"
-            @change="importRestore"
-          />
-        </div>
-
-        <!-- Column 2: Keyboard shortcuts -->
-        <div class="settings-col">
-          <div class="settings-section-title">Keyboard shortcuts</div>
-          <div class="shortcut-row"><kbd>Space</kbd> <span>Open / close library</span></div>
-          <div class="shortcut-row"><kbd>H</kbd> <span>Toggle alternating colors</span></div>
-          <div class="shortcut-row"><kbd>L</kbd> <span>Toggle section separators</span></div>
-          <div class="shortcut-row"><kbd>M</kbd> <span>Toggle line merging</span></div>
-          <div class="shortcut-row"><kbd>T</kbd> <span>Search chords (Ultimate Guitar)</span></div>
-          <div class="shortcut-row"><kbd>+ / −</kbd> <span>Adjust font size</span></div>
-          <div class="shortcut-row"><kbd>← →</kbd> <span>Navigate pages</span></div>
-        </div>
-
-        <!-- Column 3: Spotify & Band -->
-        <div class="settings-col">
-          <div class="settings-section-title">Spotify & Band</div>
-
-          <!-- Band name -->
-          <label class="setting-row setting-row--input">
-            <span>Band name</span>
-            <input
-              type="text"
-              class="settings-text-input"
-              v-model="bandNameInput"
-              placeholder="My Band"
-              @blur="saveBandName"
-              @keydown.enter="$event.target.blur()"
-            />
-          </label>
-
-          <!-- Mosaic genres -->
-          <label class="setting-row setting-row--input">
-            <span>Mosaic genres</span>
-            <input
-              type="text"
-              class="settings-text-input"
-              v-model="mosaicGenresInput"
-              placeholder="grunge, punk"
-              @blur="saveMosaicGenres"
-              @keydown.enter="$event.target.blur()"
-            />
-          </label>
-
-          <!-- Spotify connection -->
-          <div v-if="spotifyConnected" class="spotify-status">
-            <div class="spotify-connected">
-              <MdiIcon :path="mdiSpotify" :size="16" />
-              <span>{{ spotifyUser }}</span>
-            </div>
-            <button class="accent-btn accent-btn--danger accent-btn--sm" @click="onDisconnect">Disconnect</button>
-          </div>
-          <button v-else class="accent-btn apply-all-btn spotify-connect-btn" @click="connectSpotify">
-            <MdiIcon :path="mdiSpotify" :size="16" />
-            Connect Spotify
-          </button>
-
-          <!-- Source playlist picker (when connected) -->
-          <template v-if="spotifyConnected">
-            <label class="setting-row setting-row--input">
-              <span>Source playlist</span>
-              <select
-                class="settings-select"
-                v-model="selectedPlaylist"
-                @change="saveSourcePlaylist"
-              >
-                <option value="">None</option>
-                <option
-                  v-for="pl in userPlaylists"
-                  :key="pl.id"
-                  :value="pl.id"
-                >{{ pl.name }}</option>
-              </select>
+          <div class="settings-section">
+            <div class="settings-section-title">Display Defaults</div>
+            <label class="setting-row">
+              <input type="checkbox" v-model="defaults.altColors" @change="$emit('save-defaults')" />
+              <span>Alternating colors</span>
             </label>
+            <label class="setting-row">
+              <input type="checkbox" v-model="defaults.separators" @change="$emit('save-defaults')" />
+              <span>Section separators</span>
+            </label>
+            <label class="setting-row">
+              <input type="checkbox" v-model="defaults.merge" @change="$emit('save-defaults')" />
+              <span>Line merging</span>
+            </label>
+            <button class="accent-btn settings-btn" @click="$emit('apply-defaults-to-all')">Apply defaults to all</button>
+            <span v-if="applyStatus" class="status-msg">{{ applyStatus }}</span>
+          </div>
 
+          <div class="settings-section">
+            <div class="settings-section-title">Keyboard Shortcuts</div>
+            <div class="shortcut-row"><kbd>Space</kbd> <span>Open / close library</span></div>
+            <div class="shortcut-row"><kbd>H</kbd> <span>Toggle alternating colors</span></div>
+            <div class="shortcut-row"><kbd>L</kbd> <span>Toggle section separators</span></div>
+            <div class="shortcut-row"><kbd>M</kbd> <span>Toggle line merging</span></div>
+            <div class="shortcut-row"><kbd>T</kbd> <span>Search chords (Ultimate Guitar)</span></div>
+            <div class="shortcut-row"><kbd>+ / −</kbd> <span>Adjust font size</span></div>
+            <div class="shortcut-row"><kbd>← →</kbd> <span>Navigate pages</span></div>
+          </div>
+        </div>
 
-            <!-- Sync button -->
-            <button
-              class="accent-btn apply-all-btn"
-              :disabled="syncing"
-              @click="triggerSync"
-            >
-              {{ syncing ? 'Syncing…' : 'Sync with Spotify' }}
+        <!-- Column 2: Band + Spotify -->
+        <div class="settings-col">
+          <div class="settings-section">
+            <div class="settings-section-title">Band</div>
+            <label class="setting-row setting-row--input">
+              <span>Band name</span>
+              <input
+                type="text"
+                class="settings-text-input"
+                v-model="bandNameInput"
+                placeholder="My Band"
+                @blur="saveBandName"
+                @keydown.enter="$event.target.blur()"
+              />
+            </label>
+            <label class="setting-row setting-row--input">
+              <span>Mosaic genres</span>
+              <input
+                type="text"
+                class="settings-text-input"
+                v-model="mosaicGenresInput"
+                placeholder="grunge, punk"
+                @blur="saveMosaicGenres"
+                @keydown.enter="$event.target.blur()"
+              />
+            </label>
+          </div>
+
+          <div class="settings-section">
+            <div class="settings-section-title">Spotify</div>
+            <div v-if="spotifyConnected" class="spotify-status">
+              <div class="spotify-connected">
+                <MdiIcon :path="mdiSpotify" :size="16" />
+                <span>{{ spotifyUser }}</span>
+              </div>
+              <button class="accent-btn accent-btn--danger accent-btn--sm" @click="onDisconnect">Disconnect</button>
+            </div>
+            <button v-else class="accent-btn settings-btn spotify-connect-btn" @click="connectSpotify">
+              <MdiIcon :path="mdiSpotify" :size="16" />
+              Connect Spotify
             </button>
-            <span v-if="syncStatus" class="apply-status">{{ syncStatus }}</span>
-          </template>
+
+            <template v-if="spotifyConnected">
+              <label class="setting-row setting-row--input">
+                <span>Source playlist</span>
+                <select
+                  class="settings-select"
+                  v-model="selectedPlaylist"
+                  @change="saveSourcePlaylist"
+                >
+                  <option value="">None</option>
+                  <option
+                    v-for="pl in userPlaylists"
+                    :key="pl.id"
+                    :value="pl.id"
+                  >{{ pl.name }}</option>
+                </select>
+              </label>
+
+              <button
+                class="accent-btn settings-btn"
+                :disabled="syncing"
+                @click="triggerSync"
+              >
+                {{ syncing ? 'Syncing…' : 'Sync with Spotify' }}
+              </button>
+              <span v-if="syncStatus" class="status-msg">{{ syncStatus }}</span>
+            </template>
+          </div>
+        </div>
+
+        <!-- Column 3: Tools + Data + Danger Zone -->
+        <div class="settings-col">
+          <div class="settings-section">
+            <div class="settings-section-title">Tools</div>
+            <button class="accent-btn settings-btn" @click="openBookmarklet">UG Import bookmarklet</button>
+          </div>
+
+          <div class="settings-section">
+            <div class="settings-section-title">Data</div>
+            <div class="btn-row">
+              <button class="accent-btn settings-btn" @click="exportBackup">↓ Backup</button>
+              <button class="accent-btn settings-btn" @click="restoreFileInput?.click()">↑ Restore</button>
+            </div>
+            <span v-if="restoreStatus" class="status-msg">{{ restoreStatus }}</span>
+            <input
+              ref="restoreFileInput"
+              type="file"
+              accept=".json"
+              style="display: none"
+              @change="importRestore"
+            />
+          </div>
+
+          <div class="settings-section">
+            <div class="settings-section-title">Reset</div>
+            <button class="accent-btn settings-btn" @click="onClearChords">
+              {{ confirmClearChords ? 'Are you sure?' : 'Clear all chords' }}
+            </button>
+            <span v-if="resetChordStatus" class="status-msg">{{ resetChordStatus }}</span>
+            <button class="accent-btn settings-btn" @click="$emit('clear-played-status')">Clear played status</button>
+          </div>
         </div>
       </div>
     </div>
@@ -276,7 +286,6 @@ async function saveSourcePlaylist() {
   await api.setSetting('spotify_source_playlist', selectedPlaylist.value)
 }
 
-
 async function triggerSync() {
   syncing.value = true
   syncStatus.value = ''
@@ -304,8 +313,8 @@ onMounted(async () => {
 
 <style scoped>
 .settings-modal {
-  padding: 2rem 2rem 1.5rem;
-  max-width: 53.125rem;
+  padding: 2rem 2.5rem 2rem;
+  max-width: 56rem;
   width: 90vw;
 }
 
@@ -315,33 +324,65 @@ onMounted(async () => {
 
 .settings-columns {
   display: flex;
-  gap: 2rem;
+  gap: 0;
 }
 
 .settings-col {
   flex: 1;
+  padding: 0 1.5rem;
+}
+
+.settings-col:first-child {
+  padding-left: 0;
+}
+
+.settings-col:last-child {
+  padding-right: 0;
+}
+
+.settings-col + .settings-col {
+  border-left: 1px solid var(--border);
+}
+
+/* Sections within columns */
+.settings-section {
+  padding-bottom: var(--space-lg);
+  margin-bottom: var(--space-lg);
+}
+
+.settings-section:last-child {
+  margin-bottom: 0;
+  padding-bottom: 0;
+}
+
+.settings-section:not(:last-child) {
+  border-bottom: 1px solid var(--border);
 }
 
 .settings-section-title {
   font-size: var(--font-xs);
+  font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--text-dim);
-  padding: 0.25rem 0.5rem;
-  margin-bottom: 0.15rem;
+  margin-bottom: var(--space-md);
 }
 
+/* Setting rows */
 .setting-row {
   display: flex;
-  flex-direction: row-reverse;
-  justify-content: flex-end;
   align-items: center;
   gap: var(--space-md);
-  padding: var(--space-xs) 0.5rem;
+  padding: var(--space-xs) 0;
   font-size: var(--font-sm);
   color: var(--text-muted);
   cursor: pointer;
   border-radius: var(--radius-xs);
+  transition: color var(--speed-fast);
+}
+
+.setting-row:hover {
+  color: var(--text-primary);
 }
 
 .setting-row--input {
@@ -351,9 +392,8 @@ onMounted(async () => {
   cursor: default;
 }
 
-.setting-row:hover {
-  color: var(--text-primary);
-  background: var(--bg-hover-subtle);
+.setting-row--input:hover {
+  color: var(--text-muted);
 }
 
 .setting-row input[type="checkbox"] {
@@ -363,6 +403,7 @@ onMounted(async () => {
   cursor: pointer;
 }
 
+/* Inputs */
 .settings-text-input,
 .settings-select {
   background: var(--bg-surface);
@@ -390,24 +431,37 @@ onMounted(async () => {
   color: var(--text-primary);
 }
 
-.apply-all-btn {
+/* Buttons */
+.settings-btn {
   display: block;
+  width: 100%;
+  text-align: center;
   margin-top: var(--space-md);
-  margin-left: 0.5rem;
 }
 
-.apply-status {
+.btn-row {
+  display: flex;
+  gap: var(--space-sm);
+}
+
+.btn-row .settings-btn {
+  flex: 1;
+}
+
+/* Status messages */
+.status-msg {
   display: block;
-  margin-top: 0.25rem;
+  margin-top: var(--space-xs);
   font-size: var(--font-xs);
   color: var(--accent);
 }
 
+/* Shortcuts */
 .shortcut-row {
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  padding: 0.2rem 0.5rem;
+  padding: 0.2rem 0;
   font-size: var(--font-sm);
   color: var(--text-dim);
 }
@@ -425,14 +479,13 @@ onMounted(async () => {
   color: var(--text-muted);
 }
 
-/* Spotify section */
+/* Spotify */
 .spotify-status {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-sm);
-  padding: var(--space-xs) 0.5rem;
-  margin-top: var(--space-sm);
+  padding: var(--space-xs) 0;
 }
 
 .spotify-connected {
@@ -446,6 +499,7 @@ onMounted(async () => {
 .spotify-connect-btn {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 0.4rem;
 }
 
@@ -454,20 +508,5 @@ onMounted(async () => {
   font-size: var(--font-xs);
 }
 
-.settings-divider {
-  height: 1px;
-  background: var(--border-light);
-  margin: var(--space-md) 0.5rem;
-}
 
-.backup-row {
-  display: flex;
-  gap: var(--space-sm);
-  margin-left: 0.5rem;
-  margin-top: var(--space-md);
-}
-
-.backup-row .apply-all-btn {
-  margin-top: 0;
-}
 </style>
