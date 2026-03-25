@@ -129,6 +129,7 @@ import { mdiMagnify, mdiCog } from '@mdi/js'
 
 import { splitTitle } from '../utils/titleParser.js'
 import { api } from '../api.js'
+import { useEventListener } from '@vueuse/core'
 
 const props = defineProps({
   favorites: { type: Array, default: () => [] },
@@ -144,9 +145,12 @@ const labelColors = Object.fromEntries(LABEL_OPTIONS.map(o => [o.value, o.color]
 const labelNames = Object.fromEntries(LABEL_OPTIONS.map(o => [o.value, o.name]))
 
 const labelSegments = computed(() => {
-  const counts = { fresh: 0, 'getting-there': 0, 'in-setlist': 0, ignored: 0 }
-  for (const f of props.favorites) counts[f.label || 'fresh']++
-  const total = props.favorites.length || 1
+  const counts = { fresh: 0, 'getting-there': 0, 'in-setlist': 0 }
+  for (const f of props.favorites) {
+    const lbl = f.label || 'fresh'
+    if (lbl in counts) counts[lbl]++
+  }
+  const total = Object.values(counts).reduce((a, b) => a + b, 0) || 1
   return Object.entries(counts)
     .filter(([, count]) => count > 0)
     .map(([key, count]) => ({
@@ -170,6 +174,7 @@ function onSongContextMenu(e, song) {
 }
 
 function closeCtxMenu() { ctxMenu.show = false }
+useEventListener(document, 'click', closeCtxMenu)
 
 function setLabelFromCtx(label) {
   const fav = ctxMenu.fav
