@@ -12,6 +12,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@chenglou/pretext": "^0.0.4",
     "@mdi/js": "^7.4.47",
     "@vueuse/core": "^14.2.1",
     "canvas-confetti": "^1.9.4",

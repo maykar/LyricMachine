@@ -18,15 +18,13 @@
         >{{ line }}</div>
       </div>
     </div>
-
-    <!-- Hidden measurement element for merge checks -->
-    <span ref="mergeRef" class="merge-measure" aria-hidden="true"></span>
   </div>
 </template>
 
 <script setup>
 import { ref, computed, watch, onMounted, nextTick } from 'vue'
 import { useEventListener } from '@vueuse/core'
+import { prepare, layout } from '@chenglou/pretext'
 
 const props = defineProps({
   lyrics: { type: String, default: '' },
@@ -40,7 +38,6 @@ const props = defineProps({
 const emit = defineEmits(['adjust-changed', 'merge-changed', 'separators-changed', 'alt-colors-changed'])
 
 const wrapperRef = ref(null)
-const mergeRef = ref(null)
 
 const fontSize = ref(80)
 const columnCount = ref(2)
@@ -54,8 +51,20 @@ const mergeMode = ref(false)
 const showSeparators = ref(false)
 const showAltColors = ref(true)
 
+// Stored from last calculate() call — used by recheckPages() to avoid re-reading DOM
+const storedColWidth = ref(0)
+const storedAvailableHeight = ref(0)
+
 const MAX_FONT = 80
 const MIN_FONT = 20
+
+// --- Pretext constants ---
+// Reference pixel size for canvas measurement. Actual font size is handled via
+// the linear-scaling trick: layout at (colWidth × REF_PX / targetSize) gives the
+// correct lineCount for targetSize, without re-running prepare() per candidate.
+const REF_PX = 16
+const FONT_SPEC = `${REF_PX}px Inter`  // must match CSS font-family
+const LINE_HEIGHT_RATIO = 1.45         // must match CSS line-height on .lyrics-columns
 
 // --- Font size cache: skip binary search on revisit ---
 const fontCache = new Map()
@@ -95,42 +104,6 @@ const visibleColumns = computed(() => {
   return result
 })
 
-// Check if any column's content overflows the wrapper
-function hasOverflow() {
-  const wrapper = wrapperRef.value
-  if (!wrapper) return false
-  const cols = wrapper.querySelectorAll('.lyrics-col')
-  for (const col of cols) {
-    if (Math.ceil(col.scrollHeight) > Math.ceil(col.clientHeight)) return true
-  }
-  return false
-}
-
-// Binary search for the largest font that doesn't overflow
-async function findFittingFont(lines, cols) {
-  columnCount.value = cols
-  const perCol = Math.ceil(lines.length / cols)
-  linesPerPage.value = perCol * cols
-  totalPages.value = 1
-  currentPage.value = 1
-
-  let lo = MIN_FONT, hi = MAX_FONT, best = 0
-
-  while (lo <= hi) {
-    const mid = Math.floor((lo + hi) / 2)
-    fontSize.value = mid
-    await nextTick()
-
-    if (!hasOverflow()) {
-      best = mid
-      lo = mid + 1
-    } else {
-      hi = mid - 1
-    }
-  }
-
-  return best
-}
 // Collapse consecutive duplicate lines: "line\nline\nline" → "line (x3)"
 function collapseRepeats(lines) {
   const result = []
@@ -153,15 +126,49 @@ function collapseRepeats(lines) {
   return result
 }
 
-// Merge consecutive non-empty lines that fit side-by-side at the given font/colWidth
+// --- Pretext-powered binary search ---
+// Key insight: empty lyric lines render as 0-height <div>s in the DOM (empty block
+// elements have no height). Joining all lines with '\n' and using pre-wrap would
+// cause Pretext to count empty lines as full line-height — overestimating total
+// height for songs with blank separators between verses/choruses.
+//
+// Fix: prepare each NON-EMPTY line individually. Each is measured for wrapping
+// at the candidate font size (via the scaling trick), and empty lines contribute
+// 0 to the height estimate — exactly matching DOM rendering.
+function findBestFont(lines, colWidth, availableHeight) {
+  // Pre-prepare every non-empty line once (O(N) prepare calls, all fast for short strings)
+  const preparedLines = lines
+    .filter(l => l.trim())
+    .map(l => prepare(l, FONT_SPEC))
+
+  if (!preparedLines.length) return MAX_FONT
+
+  let lo = MIN_FONT, hi = MAX_FONT, best = 0
+  while (lo <= hi) {
+    const mid = Math.floor((lo + hi) / 2)
+    // Scale colWidth to REF_PX domain for the linear scaling trick.
+    const scaledWidth = colWidth * REF_PX / mid
+    const refLineHeight = REF_PX * LINE_HEIGHT_RATIO
+    // Sum visual lines across all non-empty lyric lines, accounting for any
+    // individual line wrapping within the column width.
+    let totalVisualLines = 0
+    for (const p of preparedLines) {
+      totalVisualLines += layout(p, scaledWidth, refLineHeight).lineCount
+    }
+    // Convert back to actual pixel height at the candidate font size.
+    if (totalVisualLines * mid * LINE_HEIGHT_RATIO <= availableHeight) {
+      best = mid
+      lo = mid + 1
+    } else {
+      hi = mid - 1
+    }
+  }
+  return best  // 0 if nothing fits
+}
+
+// --- Pretext-powered merge line check ---
+// No hidden DOM span needed — use the same scaling trick for a single-line check.
 function mergeShortLines(lines, fontSizePx, colWidth) {
-  const el = mergeRef.value
-  if (!el) return lines
-
-  el.style.fontSize = fontSizePx + 'px'
-  el.style.fontFamily = "'Inter', system-ui, -apple-system, sans-serif"
-  el.style.whiteSpace = 'nowrap'
-
   const result = []
   let i = 0
   while (i < lines.length) {
@@ -179,8 +186,11 @@ function mergeShortLines(lines, fontSizePx, colWidth) {
     const nextHasRepeat = i + 1 < lines.length && /\(x\d+\)$/.test(lines[i + 1])
     if (!hasRepeat && !nextHasRepeat && i + 1 < lines.length && lines[i + 1].trim()) {
       const candidate = line + ' — ' + lines[i + 1]
-      el.textContent = candidate
-      if (el.offsetWidth <= colWidth) {
+      // prepare() is fast for short single-line strings (~0.04ms each)
+      const p = prepare(candidate, FONT_SPEC)
+      const scaledWidth = colWidth * REF_PX / fontSizePx
+      const { lineCount } = layout(p, scaledWidth, REF_PX * LINE_HEIGHT_RATIO)
+      if (lineCount === 1) {
         result.push(candidate)
         i += 2
         continue
@@ -190,6 +200,13 @@ function mergeShortLines(lines, fontSizePx, colWidth) {
     i++
   }
   return result
+}
+
+// Returns the first column's lines for a given total line array and column count.
+// The first column always has the maximum lines (ceil distribution),
+// so checking it is sufficient to verify fit for the entire layout.
+function firstColLines(lines, cols) {
+  return lines.slice(0, Math.ceil(lines.length / cols))
 }
 
 async function calculate() {
@@ -209,6 +226,8 @@ async function calculate() {
     totalPages.value = cached.totalPages
     calculatedFontSize.value = cached.calculatedFontSize
     fontSize.value = cached.calculatedFontSize + manualAdjust.value
+    storedColWidth.value = cached.colWidth
+    storedAvailableHeight.value = cached.availableHeight
     currentPage.value = 1
     return
   }
@@ -216,86 +235,107 @@ async function calculate() {
   // Hide during measurement to prevent flickering
   wrapper.style.visibility = 'hidden'
 
-  // Helper: get actual column width from the DOM
-  function getColWidth() {
-    const col = wrapper.querySelector('.lyrics-col')
-    return col ? col.clientWidth : wrapper.clientWidth / 2
-  }
-
-  // 1) Try 2 columns — first without merge, then with
+  // ─── DOM READ #1 ─────────────────────────────────────────────────────────────
+  // Set 2-column layout and await Vue's DOM update to get accurate column dimensions.
+  // This is the only DOM-blocked step for the 2-column path; all searches after
+  // this are pure Pretext arithmetic with zero reflows.
+  columnCount.value = 2
   allLines.value = collapsed
-  let best2 = await findFittingFont(collapsed, 2)
+  linesPerPage.value = collapsed.length
+  totalPages.value = 1
+  currentPage.value = 1
+  await nextTick()
+
+  const colEl = wrapper.querySelector('.lyrics-col')
+  const availableHeight = colEl?.clientHeight ?? wrapper.clientHeight
+  const colWidth2 = colEl?.clientWidth ?? wrapper.clientWidth / 2
+  storedAvailableHeight.value = availableHeight
+
+  // ─── 2-COLUMN SEARCH (pure Pretext, zero DOM reads) ─────────────────────────
+  let lines2 = collapsed
+  let best2 = findBestFont(firstColLines(collapsed, 2), colWidth2, availableHeight)
+
   if (best2 >= MIN_FONT) {
     if (mergeMode.value) {
-      const colW = getColWidth()
-      const merged = mergeShortLines(collapsed, best2, colW)
+      const merged = mergeShortLines(collapsed, best2, colWidth2)
       if (merged.length < collapsed.length) {
-        allLines.value = merged
-        const best2m = await findFittingFont(merged, 2)
+        const best2m = findBestFont(firstColLines(merged, 2), colWidth2, availableHeight)
         if (best2m >= MIN_FONT) {
-          const finalMerged = mergeShortLines(collapsed, best2m, getColWidth())
-          allLines.value = finalMerged
+          lines2 = mergeShortLines(collapsed, best2m, colWidth2)
           best2 = best2m
         }
       }
     }
+    allLines.value = lines2
+    linesPerPage.value = lines2.length
+    storedColWidth.value = colWidth2
     calculatedFontSize.value = best2
     fontSize.value = best2 + manualAdjust.value
-    if (cacheKey) fontCache.set(cacheKey, { allLines: allLines.value, columnCount: columnCount.value, linesPerPage: linesPerPage.value, totalPages: totalPages.value, calculatedFontSize: best2 })
+    if (cacheKey) fontCache.set(cacheKey, {
+      allLines: lines2, columnCount: 2, linesPerPage: lines2.length,
+      totalPages: 1, calculatedFontSize: best2, colWidth: colWidth2, availableHeight,
+    })
     wrapper.style.visibility = ''
     return
   }
 
-  // 2) Try 3 columns
+  // ─── DOM READ #2 ─────────────────────────────────────────────────────────────
+  // Switch to 3-column layout for one more dimension read.
+  columnCount.value = 3
   allLines.value = collapsed
-  let best3 = await findFittingFont(collapsed, 3)
+  linesPerPage.value = collapsed.length
+  await nextTick()
+
+  const colWidth3 = wrapper.querySelector('.lyrics-col')?.clientWidth ?? wrapper.clientWidth / 3
+
+  // ─── 3-COLUMN SEARCH (pure Pretext, zero DOM reads) ─────────────────────────
+  let lines3 = collapsed
+  let best3 = findBestFont(firstColLines(collapsed, 3), colWidth3, availableHeight)
+
   if (best3 >= MIN_FONT) {
     if (mergeMode.value) {
-      const colW = getColWidth()
-      const merged = mergeShortLines(collapsed, best3, colW)
+      const merged = mergeShortLines(collapsed, best3, colWidth3)
       if (merged.length < collapsed.length) {
-        allLines.value = merged
-        const best3m = await findFittingFont(merged, 3)
+        const best3m = findBestFont(firstColLines(merged, 3), colWidth3, availableHeight)
         if (best3m >= MIN_FONT) {
-          const finalMerged = mergeShortLines(collapsed, best3m, getColWidth())
-          allLines.value = finalMerged
+          lines3 = mergeShortLines(collapsed, best3m, colWidth3)
           best3 = best3m
         }
       }
     }
+    allLines.value = lines3
+    linesPerPage.value = lines3.length
+    storedColWidth.value = colWidth3
     calculatedFontSize.value = best3
     fontSize.value = best3 + manualAdjust.value
-    if (cacheKey) fontCache.set(cacheKey, { allLines: allLines.value, columnCount: columnCount.value, linesPerPage: linesPerPage.value, totalPages: totalPages.value, calculatedFontSize: best3 })
+    if (cacheKey) fontCache.set(cacheKey, {
+      allLines: lines3, columnCount: 3, linesPerPage: lines3.length,
+      totalPages: 1, calculatedFontSize: best3, colWidth: colWidth3, availableHeight,
+    })
     wrapper.style.visibility = ''
     return
   }
 
-  // 3) Multi-page with 3 columns
-  columnCount.value = 3
+  // ─── MULTI-PAGE with 3 columns (pure Pretext, zero DOM reads) ───────────────
+  // colWidth3 is already known; iterate page counts until lines fit.
+  storedColWidth.value = colWidth3
+  allLines.value = collapsed
+
   for (let pages = 2; pages <= 10; pages++) {
     const perCol = Math.ceil(collapsed.length / (3 * pages))
-    linesPerPage.value = perCol * 3
-    totalPages.value = pages
-    currentPage.value = 1
-
-    let lo = MIN_FONT, hi = MAX_FONT, best = 0
-    while (lo <= hi) {
-      const mid = Math.floor((lo + hi) / 2)
-      fontSize.value = mid
-      await nextTick()
-
-      if (!hasOverflow()) {
-        best = mid
-        lo = mid + 1
-      } else {
-        hi = mid - 1
-      }
-    }
+    const pageFirstCol = collapsed.slice(0, perCol)
+    const best = findBestFont(pageFirstCol, colWidth3, availableHeight)
 
     if (best >= MIN_FONT) {
+      linesPerPage.value = perCol * 3
+      totalPages.value = pages
+      currentPage.value = 1
       calculatedFontSize.value = best
       fontSize.value = best + manualAdjust.value
-      if (cacheKey) fontCache.set(cacheKey, { allLines: allLines.value, columnCount: columnCount.value, linesPerPage: linesPerPage.value, totalPages: totalPages.value, calculatedFontSize: best })
+      if (cacheKey) fontCache.set(cacheKey, {
+        allLines: collapsed, columnCount: 3, linesPerPage: perCol * 3,
+        totalPages: pages, calculatedFontSize: best, colWidth: colWidth3, availableHeight,
+      })
       wrapper.style.visibility = ''
       return
     }
@@ -304,41 +344,61 @@ async function calculate() {
   // Absolute fallback
   fontSize.value = MIN_FONT
   calculatedFontSize.value = MIN_FONT
+  linesPerPage.value = Math.ceil(collapsed.length / 3) * 3
   wrapper.style.visibility = ''
 }
 
-// Lightweight recheck: adjust page count at current font size (both up and down)
-async function recheckPages() {
-  const cols = columnCount.value
+// Lightweight recheck: adjust page count at current font size (both up and down).
+// Fully synchronous — uses stored dimensions from the last calculate() call,
+// so no DOM reads or nextTick needed.
+function recheckPages() {
+  const colWidth = storedColWidth.value
+  const availableHeight = storedAvailableHeight.value
+  if (!colWidth || !availableHeight || !allLines.value.length) return
 
-  // First: if current layout overflows, add pages
-  await nextTick()
-  while (hasOverflow() && totalPages.value < 10) {
-    const newPages = totalPages.value + 1
-    const perCol = Math.ceil(allLines.value.length / (cols * newPages))
-    linesPerPage.value = perCol * cols
-    totalPages.value = newPages
-    currentPage.value = Math.min(currentPage.value, newPages)
-    await nextTick()
+  const cols = columnCount.value
+  const currentFont = fontSize.value
+
+  // Check if the current first-column fits at the current font size.
+  // As in findBestFont: prepare non-empty lines individually so empty lines
+  // contribute 0 height (matching their 0-height DOM rendering).
+  function colFits(pages) {
+    const perCol = Math.ceil(allLines.value.length / (cols * pages))
+    const pageLines = allLines.value.slice(0, perCol)
+    if (!pageLines.length) return true
+    const scaledWidth = colWidth * REF_PX / currentFont
+    const refLineHeight = REF_PX * LINE_HEIGHT_RATIO
+    let totalVisualLines = 0
+    for (const line of pageLines) {
+      if (!line.trim()) continue  // empty lines = 0 height in DOM
+      totalVisualLines += layout(prepare(line, FONT_SPEC), scaledWidth, refLineHeight).lineCount
+    }
+    return totalVisualLines * currentFont * LINE_HEIGHT_RATIO <= availableHeight
   }
 
-  // Then: try reducing pages
-  while (totalPages.value > 1) {
-    const tryPages = totalPages.value - 1
-    const perCol = Math.ceil(allLines.value.length / (cols * tryPages))
-    const savedLPP = linesPerPage.value
-    const savedTP = totalPages.value
-    linesPerPage.value = perCol * cols
-    totalPages.value = tryPages
-    currentPage.value = Math.min(currentPage.value, tryPages)
-    await nextTick()
-
-    if (hasOverflow()) {
-      // Doesn't fit — revert
-      linesPerPage.value = savedLPP
-      totalPages.value = savedTP
-      currentPage.value = Math.min(currentPage.value, savedTP)
-      break
+  if (!colFits(totalPages.value)) {
+    // Overflowing — add pages until it fits
+    for (let p = totalPages.value + 1; p <= 10; p++) {
+      if (colFits(p)) {
+        const perCol = Math.ceil(allLines.value.length / (cols * p))
+        linesPerPage.value = perCol * cols
+        totalPages.value = p
+        currentPage.value = Math.min(currentPage.value, p)
+        break
+      }
+    }
+  } else {
+    // Try to reduce pages (font was decreased)
+    while (totalPages.value > 1) {
+      const tryPages = totalPages.value - 1
+      if (colFits(tryPages)) {
+        const perCol = Math.ceil(allLines.value.length / (cols * tryPages))
+        linesPerPage.value = perCol * cols
+        totalPages.value = tryPages
+        currentPage.value = Math.min(currentPage.value, tryPages)
+      } else {
+        break
+      }
     }
   }
 }
@@ -494,13 +554,5 @@ defineExpose({ totalPages, currentPage, adjustFont, resetFont })
 .lyric-line.empty:first-child,
 .lyric-line.empty:last-child {
   display: none;
-}
-
-.merge-measure {
-  position: absolute;
-  visibility: hidden;
-  pointer-events: none;
-  top: 0;
-  left: 0;
 }
 </style>

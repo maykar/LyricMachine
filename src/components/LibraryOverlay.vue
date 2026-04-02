@@ -933,19 +933,20 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0.75rem 1rem;
+  padding: 0.65rem 0.85rem;
   cursor: pointer;
   border-radius: var(--radius-sm);
   background: var(--bg-elevated);
   border: 1px solid var(--border);
   transition: background var(--speed-fast), border-color var(--speed-fast);
   position: relative;
+  overflow: hidden;
 }
 
 .card-top-right {
   position: absolute;
-  top: 0.75rem;
-  right: 1rem;
+  top: 0.5rem;
+  right: 0.75rem;
   display: flex;
   align-items: center;
   gap: var(--space-md);
@@ -973,8 +974,8 @@ onMounted(async () => {
 
 .library-item-actions {
   position: absolute;
-  bottom: 0.75rem;
-  right: 1rem;
+  bottom: 0.5rem;
+  right: 0.75rem;
   display: flex;
   gap: 2px;
   z-index: 1;
@@ -1067,6 +1068,7 @@ onMounted(async () => {
   flex-direction: column;
   gap: 0.15rem;
   padding-right: 4rem;
+  position: relative;
 }
 
 .library-item-artist {
