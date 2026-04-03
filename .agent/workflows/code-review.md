@@ -6,66 +6,36 @@ description: Run a Gemini CLI code review on recent changes
 
 // turbo-all
 
-1. Generate a diff and **save it to a file** (never read `git diff` from terminal buffer — it garbles):
+1. Generate a diff and save it **inside the project** so the CLI can access it via `@`:
 
 ```powershell
-git diff HEAD | Out-File -Encoding utf8 'C:\Users\theme\AppData\Local\Temp\review-diff.txt'
+git diff HEAD | Out-File -Encoding utf8 '.agent\review-diff.txt'
 ```
 
-If the diff is empty, skip to step 3 with a holistic review prompt instead.
+If the diff is empty, skip the `@.agent/review-diff.txt` reference in the prompt and ask for a holistic review instead.
 
-2. Read the diff file with `view_file` at `C:\Users\theme\AppData\Local\Temp\review-diff.txt`.
-
-3. Write the review prompt to the temp file. **Embed the diff content you just read**, not a placeholder. Include severity ratings and a verdict requirement:
+2. Write a **short** prompt referencing the diff via `@` — never embed diff content inline (blows OS command-line length limit):
 
 ```powershell
-Set-Content -Path 'C:\Users\theme\AppData\Local\Temp\review-prompt.txt' -Value @"
-You are a senior code reviewer. Review the codebase at @. for full project context.
-
-Analyze the following diff for:
-1. Bugs & Logic Errors
-2. Edge Cases
-3. Performance
-4. Security
-5. Style & Consistency
-6. Testing gaps
-
-Use severity ratings: 🔴 Critical, 🟡 Warning, 🟢 Suggestion.
-End with a verdict: APPROVE, REQUEST CHANGES, or NEEDS DISCUSSION.
-Be concise. Bullets over paragraphs.
-
-Do NOT dismiss any finding by claiming the app is "personal use", "single user", "local only", or any similar assumption. Treat every finding as if this is production software with multiple users.
-
-## Diff
-``````diff
-<PASTE THE DIFF CONTENT HERE — do NOT leave this as a placeholder>
-``````
-
-## Additional Instructions
-<any extra focus areas from the user>
-"@
+Set-Content -Path 'C:\Users\theme\AppData\Local\Temp\review-prompt.txt' -Value 'You are a senior code reviewer. Review the codebase at @. for full project context. Review the diff at @.agent/review-diff.txt and analyze it for: 1. Bugs & Logic Errors 2. Edge Cases 3. Performance 4. Security 5. Style & Consistency 6. Testing gaps. Use severity ratings: Critical, Warning, Suggestion. End with a verdict: APPROVE, REQUEST CHANGES, or NEEDS DISCUSSION. Be concise. Bullets over paragraphs. Do NOT dismiss findings by claiming personal use or single user. <extra focus areas here>'
 ```
 
-4. **Delete stale output** before running Gemini CLI to prevent reading old results:
+3. Run Gemini CLI via `cmd /c gemini.cmd` (**NOT** the `.ps1` shim — it crashes on stdout redirection). Use `WaitMsBeforeAsync: 90000` so the response is captured synchronously in the tool output:
 
 ```powershell
-Remove-Item -Force -ErrorAction SilentlyContinue 'C:\Users\theme\AppData\Local\Temp\review-output.txt'
+cmd /c "cd /d c:\Users\theme\Desktop\LyricMachine && gemini.cmd -m flash -p ""$(Get-Content -Raw 'C:\Users\theme\AppData\Local\Temp\review-prompt.txt')"""
 ```
 
-5. Run Gemini CLI from the **project root** via `cmd /c gemini.cmd` (the PowerShell `.ps1` shim crashes with `StandardOutputEncoding` errors when stdout is redirected):
+> ⚠️ **No file redirection needed.** The review output comes back through the terminal buffer. Read it directly from the `run_command` or `command_status` output with `OutputCharacterCount: 10000`. Do NOT add `> output.txt` — it causes the output to go missing.
 
-```powershell
-cmd /c "cd /d c:\Users\theme\Desktop\LyricMachine && gemini.cmd -m flash -p ""$(Get-Content -Raw 'C:\Users\theme\AppData\Local\Temp\review-prompt.txt')"" > C:\Users\theme\AppData\Local\Temp\review-output.txt 2>&1"
-```
+> ⚠️ **CRITICAL**: Do NOT use `gemini` (the `.ps1` shim) — it crashes with `StandardOutputEncoding` errors. Always use `cmd /c gemini.cmd`.
 
-⚠️ **CRITICAL**: Do NOT use `gemini` (the `.ps1` shim) with any form of output redirection (`>`, `| Tee-Object`, `2>$null`). It will crash with `StandardOutputEncoding` errors. Always use `cmd /c gemini.cmd` instead.
+> ⚠️ **CRITICAL**: Do NOT embed the diff in the prompt string. Always use `@.agent/review-diff.txt`. Embedding large diffs overflows the OS command-line length limit.
 
-6. **Verify the output file exists and is non-empty.** If the file is missing, empty, or contains only error messages, report the failure to the user instead of reading stale results.
+4. If the command goes to background, call `command_status` with `OutputCharacterCount: 10000` and `WaitDurationSeconds: 120` to retrieve the full review text from the terminal buffer.
 
-7. Read the output file with `view_file` at `C:\Users\theme\AppData\Local\Temp\review-output.txt`.
+5. Present the review to the user.
 
-8. Present the review to the user.
+6. If the verdict is **REQUEST CHANGES**, address each item and re-run from step 1.
 
-9. If the verdict is **REQUEST CHANGES**, address each item and re-run from step 1.
-
-10. If the verdict is **APPROVE**, notify the user that the review passed.
+7. If the verdict is **APPROVE**, notify the user that the review passed.

@@ -3,9 +3,12 @@ import { describe, it, expect } from 'vitest'
 /**
  * Tests for LyricsDisplay.vue logic — extracted and tested directly.
  *
- * Since the component has complex internal computed properties,
- * we test the algorithms (column splitting, alt-line computation, djb2 hash)
- * as standalone functions extracted from the component source.
+ * Since LyricsDisplay renders to a canvas and depends on browser APIs
+ * (canvas context, font metrics) we test the pure utility algorithms
+ * extracted from the component source.
+ *
+ * Not tested here (require canvas/Pretext): findBestFont, mergeShortLines,
+ * recheckPages, draw().
  */
 
 // --- Extracted: djb2 hash (from getCacheKey) ---
@@ -15,49 +18,31 @@ function djb2(str) {
   return h
 }
 
-// --- Extracted: column splitting + alt-line sets (from visibleColumns computed) ---
-function buildColumns(allLines, columnCount, linesPerPage, currentPage) {
-  if (!linesPerPage) return []
-  const start = (currentPage - 1) * linesPerPage
-  const pageLines = allLines.slice(start, start + linesPerPage)
-  const perCol = Math.ceil(linesPerPage / columnCount)
-
-  const result = []
-  for (let c = 0; c < columnCount; c++) {
-    const colLines = pageLines.slice(c * perCol, (c + 1) * perCol)
-    const altSet = new Set()
-    let count = 0
-    for (let i = 0; i < colLines.length; i++) {
-      if (colLines[i]?.trim()) {
-        if (count % 2 === 1) altSet.add(i)
-        count++
-      }
-    }
-    result.push({ lines: colLines, altSet })
-  }
-  return result
+// --- Extracted: computeGeometryPure (from computeGeometryPure) ---
+// Pure arithmetic — no DOM. Matches the constants in LyricsDisplay.vue exactly:
+// padding: 3rem H + 3rem V + 0.3125rem top extra; gap: 3rem (2-col) / 2rem (3-col).
+function computeGeometryPure(W, H, remPx, cols) {
+  const paddingH = 3 * remPx
+  const paddingV = 3 * remPx
+  const paddingTopExtra = 0.3125 * remPx
+  const gap = cols === 3 ? 2 * remPx : 3 * remPx
+  const colW = (W - 2 * paddingH - (cols - 1) * gap) / cols
+  const availH = H - 2 * paddingV - paddingTopExtra
+  return { W, H, remPx, paddingH, paddingV, paddingTopExtra, gap, colW, availH }
 }
 
-// --- Extracted: collapse repeats ---
+// --- Extracted: collapse repeats (from collapseRepeats) ---
+// Collapses any run of 2+ identical consecutive lines into "line (xN)"
 function collapseRepeats(lines) {
   const result = []
   let i = 0
   while (i < lines.length) {
     const line = lines[i]
-    if (!line.trim()) {
-      result.push(line)
-      i++
-      continue
-    }
+    if (!line.trim()) { result.push(line); i++; continue }
     let count = 1
     while (i + count < lines.length && lines[i + count] === line) count++
-    if (count >= 3) {
-      result.push(`${line} (x${count})`)
-      i += count
-    } else {
-      result.push(line)
-      i++
-    }
+    result.push(count > 1 ? `${line} (x${count})` : line)
+    i += count
   }
   return result
 }
@@ -89,84 +74,68 @@ describe('djb2 hash', () => {
   })
 })
 
-describe('buildColumns', () => {
-  const lines = ['Line 1', 'Line 2', 'Line 3', 'Line 4', 'Line 5', 'Line 6']
+describe('computeGeometryPure', () => {
+  const remPx = 16 // 1rem = 16px (browser default)
+  const W = 1920
+  const H = 1080
 
-  it('splits lines into 2 columns', () => {
-    const cols = buildColumns(lines, 2, 6, 1)
-    expect(cols).toHaveLength(2)
-    expect(cols[0].lines).toEqual(['Line 1', 'Line 2', 'Line 3'])
-    expect(cols[1].lines).toEqual(['Line 4', 'Line 5', 'Line 6'])
+  it('2-column: colW accounts for 2×paddingH + 1 gap (3rem)', () => {
+    const g = computeGeometryPure(W, H, remPx, 2)
+    const expectedColW = (W - 2 * 3 * remPx - 1 * 3 * remPx) / 2
+    expect(g.colW).toBeCloseTo(expectedColW)
+    expect(g.gap).toBe(3 * remPx)
   })
 
-  it('splits lines into 3 columns', () => {
-    const cols = buildColumns(lines, 3, 6, 1)
-    expect(cols).toHaveLength(3)
-    expect(cols[0].lines).toEqual(['Line 1', 'Line 2'])
-    expect(cols[1].lines).toEqual(['Line 3', 'Line 4'])
-    expect(cols[2].lines).toEqual(['Line 5', 'Line 6'])
+  it('3-column: colW accounts for 2×paddingH + 2 gaps (2rem each)', () => {
+    const g = computeGeometryPure(W, H, remPx, 3)
+    const expectedColW = (W - 2 * 3 * remPx - 2 * 2 * remPx) / 3
+    expect(g.colW).toBeCloseTo(expectedColW)
+    expect(g.gap).toBe(2 * remPx)
   })
 
-  it('returns empty array when linesPerPage is 0', () => {
-    expect(buildColumns(lines, 2, 0, 1)).toEqual([])
+  it('availH subtracts 2×paddingV + paddingTopExtra', () => {
+    const g = computeGeometryPure(W, H, remPx, 2)
+    const expectedAvailH = H - 2 * 3 * remPx - 0.3125 * remPx
+    expect(g.availH).toBeCloseTo(expectedAvailH)
   })
 
-  it('handles pagination correctly', () => {
-    const longLines = Array.from({ length: 12 }, (_, i) => `L${i + 1}`)
-    const page2 = buildColumns(longLines, 2, 6, 2) // page 2 gets lines 7-12
-    expect(page2[0].lines).toEqual(['L7', 'L8', 'L9'])
-    expect(page2[1].lines).toEqual(['L10', 'L11', 'L12'])
-  })
-})
-
-describe('altSet computation', () => {
-  it('marks every other non-empty line as alt', () => {
-    const lines = ['Line A', 'Line B', 'Line C', 'Line D']
-    const cols = buildColumns(lines, 1, 4, 1)
-    const altSet = cols[0].altSet
-
-    expect(altSet.has(0)).toBe(false) // 1st non-empty → not alt
-    expect(altSet.has(1)).toBe(true)  // 2nd non-empty → alt
-    expect(altSet.has(2)).toBe(false) // 3rd → not alt
-    expect(altSet.has(3)).toBe(true)  // 4th → alt
+  it('3-col colW is narrower than 2-col colW for same viewport', () => {
+    const g2 = computeGeometryPure(W, H, remPx, 2)
+    const g3 = computeGeometryPure(W, H, remPx, 3)
+    expect(g3.colW).toBeLessThan(g2.colW)
   })
 
-  it('skips empty lines in alt counting', () => {
-    const lines = ['Line A', '', 'Line B', '', 'Line C']
-    const cols = buildColumns(lines, 1, 5, 1)
-    const altSet = cols[0].altSet
-
-    expect(altSet.has(0)).toBe(false) // "Line A" → count=0, not alt
-    expect(altSet.has(1)).toBe(false) // empty → skipped
-    expect(altSet.has(2)).toBe(true)  // "Line B" → count=1, alt
-    expect(altSet.has(3)).toBe(false) // empty → skipped
-    expect(altSet.has(4)).toBe(false) // "Line C" → count=2, not alt
-  })
-
-  it('handles all-empty column', () => {
-    const lines = ['', '', '']
-    const cols = buildColumns(lines, 1, 3, 1)
-    expect(cols[0].altSet.size).toBe(0)
-  })
-
-  it('handles single line', () => {
-    const cols = buildColumns(['Only line'], 1, 1, 1)
-    expect(cols[0].altSet.size).toBe(0) // first line is never alt
+  it('passes raw dimensions through unchanged', () => {
+    const g = computeGeometryPure(1280, 900, remPx, 2)
+    expect(g.W).toBe(1280)
+    expect(g.H).toBe(900)
+    expect(g.remPx).toBe(remPx)
   })
 })
 
 describe('collapseRepeats', () => {
-  it('collapses 3+ consecutive identical lines', () => {
+  it('collapses 4 consecutive identical lines', () => {
     const result = collapseRepeats(['oh', 'oh', 'oh', 'oh'])
     expect(result).toEqual(['oh (x4)'])
   })
 
-  it('does not collapse 2 consecutive identical lines', () => {
-    const result = collapseRepeats(['oh', 'oh', 'yeah'])
-    expect(result).toEqual(['oh', 'oh', 'yeah'])
+  it('collapses 3 consecutive identical lines', () => {
+    const result = collapseRepeats(['oh', 'oh', 'oh', 'yeah'])
+    expect(result).toEqual(['oh (x3)', 'yeah'])
   })
 
-  it('preserves empty lines', () => {
+  it('collapses 2 consecutive identical lines', () => {
+    // count > 1 threshold — pairs collapse too
+    const result = collapseRepeats(['oh', 'oh', 'yeah'])
+    expect(result).toEqual(['oh (x2)', 'yeah'])
+  })
+
+  it('does not collapse a single line', () => {
+    const result = collapseRepeats(['oh', 'yeah'])
+    expect(result).toEqual(['oh', 'yeah'])
+  })
+
+  it('preserves empty lines and does not collapse across them', () => {
     const result = collapseRepeats(['line', '', 'line'])
     expect(result).toEqual(['line', '', 'line'])
   })
@@ -178,5 +147,10 @@ describe('collapseRepeats', () => {
 
   it('handles empty input', () => {
     expect(collapseRepeats([])).toEqual([])
+  })
+
+  it('handles all identical lines', () => {
+    const result = collapseRepeats(['na', 'na', 'na', 'na', 'na'])
+    expect(result).toEqual(['na (x5)'])
   })
 })

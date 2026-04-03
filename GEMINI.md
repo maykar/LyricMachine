@@ -54,7 +54,7 @@ LyricMachine helps musicians display song lyrics, chords, and Spotify playback d
 │   │   └── adjustDropdown.js# Smart dropdown/popup repositioning — keeps menus inside viewport
 │   ├── components/
 │   │   ├── TopBar.vue       # Header: font controls, edit, search, played, label, star, page indicator (lyrics page only)
-│   │   ├── LyricsDisplay.vue# Multi-column (2–3) lyrics with auto-fit font, pagination, merge, collapse repeats, alt colors, separators
+│   │   ├── LyricsDisplay.vue# Canvas-based lyrics renderer — Pretext arithmetic layout, binary-search font sizing (zero DOM reflows), multi-column, pagination, merge, collapse repeats, alt colors, separators, object-fit:contain scaling
 │   │   ├── LibraryOverlay.vue# Library page: search lrclib, favorites grid (3–4 cols), drag-and-drop reorder, context menu, filters, sort, new song form
 │   │   ├── Dashboard.vue    # Home page: album art mosaic, recently added, most played (dynamic height), label breakdown bar, context menu
 │   │   ├── KanbanView.vue   # Kanban board modal for song categorization with drag-and-drop, context menu, settings cog, confetti, party sound
@@ -280,33 +280,33 @@ Gemini CLI is installed globally and authenticated with the user's Google AI Ult
 
 ### Generating diffs
 
-**ALWAYS** save diffs to a file first — never read `git diff` output from the terminal buffer (it gets garbled/truncated on large diffs):
+Save diffs **inside the project** so the CLI can access it via `@`:
 
 ```powershell
-git diff HEAD | Out-File -Encoding utf8 'C:\Users\theme\AppData\Local\Temp\review-diff.txt'
+git diff HEAD | Out-File -Encoding utf8 '.agent\review-diff.txt'
 ```
-
-Then read it with `view_file` and embed it in the review prompt.
 
 ### Running the review
 
-1. Write the review prompt (including the diff) to a temp file
-2. Delete stale output: `Remove-Item -Force -ErrorAction SilentlyContinue 'C:\Users\theme\AppData\Local\Temp\review-output.txt'`
-3. Run Gemini CLI from the **project root** via `cmd /c gemini.cmd` (**NOT** the `.ps1` shim — it crashes with `StandardOutputEncoding` errors when stdout is redirected):
+1. Write a **short** review prompt to a temp file. Reference the diff with `@.agent/review-diff.txt` — **do NOT embed the diff content inline**. Embedding overflows the OS command-line length limit.
+2. Run Gemini CLI via `cmd /c gemini.cmd` with `WaitMsBeforeAsync: 90000`:
 
 ```powershell
-cmd /c "cd /d c:\Users\theme\Desktop\LyricMachine && gemini.cmd -m flash -p ""$(Get-Content -Raw 'C:\Users\theme\AppData\Local\Temp\review-prompt.txt')"" > C:\Users\theme\AppData\Local\Temp\review-output.txt 2>&1"
+cmd /c "cd /d c:\Users\theme\Desktop\LyricMachine && gemini.cmd -m flash -p ""$(Get-Content -Raw 'C:\Users\theme\AppData\Local\Temp\review-prompt.txt')"""
 ```
 
-> ⚠️ **CRITICAL**: Do NOT use `gemini` (the `.ps1` shim) with any form of output redirection (`>`, `| Tee-Object`, `2>$null`). It will crash. Always use `cmd /c gemini.cmd` instead.
+> ⚠️ **CRITICAL**: Do NOT use `gemini` (the `.ps1` shim) — crashes with `StandardOutputEncoding` errors. Always use `cmd /c gemini.cmd`.
 
-4. Verify the output file exists and is non-empty
-5. Read the output file with `view_file` and present the review to the user
+> ⚠️ **CRITICAL**: Do NOT embed the diff in the prompt. Use `@.agent/review-diff.txt`.
+
+> ⚠️ **CRITICAL**: Do NOT redirect output to a file (`> output.txt`). Read the review from the terminal buffer via `command_status` with `OutputCharacterCount: 10000`. File redirection causes output to go missing.
+
+3. If the command goes to background, retrieve output with `command_status` (`OutputCharacterCount: 10000`, `WaitDurationSeconds: 120`).
+4. Present the review to the user.
 
 The prompt should include:
-- Instructions to review for bugs, security, performance, style, and testing
 - `@.` reference for full codebase context
-- The diff (if reviewing specific changes) or a request for holistic review
+- `@.agent/review-diff.txt` reference for the diff
 - Any extra focus areas from the user
 
 ### When to use
@@ -324,7 +324,7 @@ The prompt should include:
 
 - **Synchronous SQLite**: `node:sqlite`'s `DatabaseSync` blocks the event loop during queries. Consider `better-sqlite3` (async-capable) if scaling up.
 - **Mixed async/sync patterns**: Server code mixes `async/await` for network fetches with synchronous DB calls. This is intentional for simplicity but complicates future migration to async databases.
-- **Binary-search font sizing**: `LyricsDisplay.vue` triggers multiple DOM reflows during initial font calculation. Mitigated by a per-song font cache (only first load is slow).
+- **Canvas lyrics rendering**: `LyricsDisplay.vue` renders to a `<canvas>` using `@chenglou/pretext` for synchronous arithmetic layout. Pretext is a small personal library with no maintenance guarantees — if it breaks, the font-sizing and line-wrap logic will need to be replaced with `ctx.measureText`-based alternatives.
 
 ## ⚠️ MANDATORY — No Assumptions About App Use
 

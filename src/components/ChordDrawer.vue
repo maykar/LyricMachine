@@ -205,7 +205,6 @@ function resetTranspose() {
   border-top: 1px solid var(--border);
   padding: 1rem 1.5rem 1.25rem;
   max-height: 35vh;
-  min-height: 2.5rem;
   overflow-y: auto;
   position: relative;
 }

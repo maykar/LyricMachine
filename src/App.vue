@@ -92,15 +92,9 @@
     </div>
 
     <!-- Chord Drawer (lyrics sub-panel, not in nav stack) -->
-    <Transition
-      @enter="onFooterEnter"
-      @after-enter="onFooterAfterEnter"
-      @leave="onFooterLeave"
-      @after-leave="triggerLyricsResize"
-      :css="false"
-    >
+    <div class="chord-wrapper" :class="{ 'chord-wrapper--open': showChords && page === 'lyrics' }">
       <ChordDrawer
-        v-if="showChords && page === 'lyrics'"
+        v-if="page === 'lyrics'"
         :loading="chordsLoading"
         :found="chordsFound"
         :sections="chordSections"
@@ -110,7 +104,7 @@
         @update:chords="onChordsEdited"
         @reset-chords="onResetChords"
       />
-    </Transition>
+    </div>
 
     <!-- Spotify Player (lyrics sub-panel, not in nav stack) -->
     <SpotifyPlayer
@@ -284,7 +278,6 @@ useKeyboard({
 })
 
 // --- Song selection ---
-let skipDrawerAnim = false
 
 function onSongSelect({ title, lyrics, fontAdjust: fa, merge, separators, altColors }) {
   currentTitle.value = title
@@ -295,7 +288,6 @@ function onSongSelect({ title, lyrics, fontAdjust: fa, merge, separators, altCol
   songAltColors.value = altColors !== undefined ? altColors : userDefaults.value.altColors
   goToPage('lyrics')
   refreshCurrentSong()
-  skipDrawerAnim = true
   fetchChords(title)
 }
 
@@ -341,69 +333,11 @@ async function clearAllPlayed() {
   await api.bulkUpdate('played', false)
 }
 
-// --- Footer animation ---
-const ANIM_DURATION = 300
 
-function triggerLyricsResize() {
-  window.dispatchEvent(new Event('resize'))
-}
 
-function onFooterEnter(el, done) {
-  // Skip animation when drawer opens as part of song navigation
-  if (skipDrawerAnim) {
-    skipDrawerAnim = false
-    done()
-    nextTick(triggerLyricsResize)
-    return
-  }
-
-  el.style.overflow = 'hidden'
-  el.style.height = '0px'
-  el.style.opacity = '0'
-  void el.offsetHeight
-
-  const targetHeight = el.scrollHeight
-  const anim = el.animate(
-    [
-      { height: '0px', opacity: 0 },
-      { height: targetHeight + 'px', opacity: 1 },
-    ],
-    { duration: ANIM_DURATION, easing: 'ease' }
-  )
-  anim.onfinish = () => {
-    el.style.height = ''
-    el.style.opacity = ''
-    el.style.overflow = ''
-    done()
-  }
-}
-
-function onFooterAfterEnter() {
-  triggerLyricsResize()
-}
-
-function onFooterLeave(el, done) {
-  const currentHeight = el.offsetHeight
-  el.style.overflow = 'hidden'
-
-  const anim = el.animate(
-    [
-      { height: currentHeight + 'px', opacity: 1 },
-      { height: '0px', opacity: 0 },
-    ],
-    { duration: ANIM_DURATION, easing: 'ease' }
-  )
-  anim.onfinish = () => {
-    el.style.height = '0px'
-    done()
-  }
-}
-
-// --- Spotify player lifecycle ---
+// Spotify player lifecycle
 let focusInterval = null
 watch(showPlayer, (val) => {
-  setTimeout(triggerLyricsResize, 350)
-
   if (val) {
     focusInterval = setInterval(() => {
       if (document.activeElement?.tagName === 'IFRAME') {
@@ -469,6 +403,17 @@ onUnmounted(() => {
   min-height: 30vh;
   overflow: hidden;
   position: relative;
+}
+
+.chord-wrapper {
+  flex-shrink: 0;
+  overflow: hidden;
+  max-height: 0;
+  transition: max-height 0.3s ease;
+}
+
+.chord-wrapper--open {
+  max-height: 35vh;
 }
 
 .lyrics-editor {
