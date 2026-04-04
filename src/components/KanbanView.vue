@@ -59,6 +59,7 @@
       :y="ctxMenu.y"
       :fav="ctxMenu.fav"
       @set-label="setLabelFromCtx"
+      @toggle-custom-label="toggleCustomLabelFromCtx"
       @toggle-played="togglePlayedFromCtx"
       @edit-count="editCountFromCtx"
       @clear-count="clearCountFromCtx"
@@ -112,6 +113,20 @@ function setLabelFromCtx(label) {
     emit('update', [...props.favorites])
   }
   ctxMenu.show = false
+}
+
+function toggleCustomLabelFromCtx(labelName) {
+  const fav = ctxMenu.fav
+  if (fav) {
+    const list = fav.customLabels || []
+    if (list.includes(labelName)) {
+      fav.customLabels = list.filter(l => l !== labelName)
+    } else {
+      fav.customLabels = [...list, labelName]
+    }
+    if (fav.id) api.updateSong(fav.id, { customLabels: fav.customLabels })
+    emit('update', [...props.favorites])
+  }
 }
 
 function togglePlayedFromCtx() {

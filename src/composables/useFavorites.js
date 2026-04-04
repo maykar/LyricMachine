@@ -19,7 +19,7 @@ const currentPlayCount = ref(0)
 
 /** Fetch all songs from the server and populate the reactive cache */
 async function loadFavorites() {
-  const songs = await api.getSongs()
+  const songs = await api.getSongsSummary()
   if (songs) favorites.value = songs
 }
 

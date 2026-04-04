@@ -51,6 +51,7 @@ All server calls MUST go through `src/api.js` — never use `fetch()` directly. 
 - `useUGImport.js` — bookmarklet import polling
 - `usePlaylistSync.js` — Spotify playlist sync + album art backfill
 - `useSpotifyAuth.js` — client-side Spotify connection state (connected/user/status) via api.js
+- `useSpotifyEmbed.js` — IFrame Embed API fallback: 30s preview playback for non-Premium users (warmUp/preload/play/pause/destroy)
 - `useToast.js` — singleton toast notifications (showToast, dismissToast)
 
 ## Testing

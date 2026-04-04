@@ -3,7 +3,7 @@ import { normalize, pickAlbumArt, spotifyFetch, fetchLrcLibLyrics } from './util
 
 // --- Route setup ---
 
-export function setupSpotifyPlaylistRoutes(server, { get, post, json }) {
+export function setupSpotifyPlaylistRoutes(server, { get, post, json, parseBody }) {
 
   // GET /api/spotify/playlists — list user's playlists for the picker
   get(server, '/api/spotify/playlists', async (req, res) => {
@@ -46,7 +46,6 @@ export function setupSpotifyPlaylistRoutes(server, { get, post, json }) {
   // POST /api/spotify/playlists/add-to-source — add a track back to source playlist
   post(server, '/api/spotify/playlists/add-to-source', async (req, res) => {
     try {
-      const { parseBody } = await import('./api.js')
       const body = await parseBody(req)
       const { trackId } = body
 

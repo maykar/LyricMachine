@@ -13,7 +13,18 @@ export function useToast() {
   function showToast(message, { type = 'error', duration = 4000 } = {}) {
     const id = nextId++
     toasts.value.push({ id, message, type })
-    setTimeout(() => dismissToast(id), duration)
+    if (duration > 0) {
+      setTimeout(() => dismissToast(id), duration)
+    }
+    return id
+  }
+
+  function updateToast(id, message, type) {
+    const toast = toasts.value.find(t => t.id === id)
+    if (toast) {
+      if (message !== undefined) toast.message = message
+      if (type !== undefined) toast.type = type
+    }
   }
 
   function dismissToast(id) {
@@ -21,5 +32,5 @@ export function useToast() {
     if (idx >= 0) toasts.value.splice(idx, 1)
   }
 
-  return { toasts, showToast, dismissToast }
+  return { toasts, showToast, updateToast, dismissToast }
 }

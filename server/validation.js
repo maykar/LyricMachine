@@ -9,7 +9,7 @@
 import * as v from 'valibot'
 
 // --- Shared field schemas ---
-const Label = v.optional(v.picklist(['fresh', 'getting-there', 'in-setlist', 'ignored']))
+const Label = v.optional(v.string())
 const BoolInt = v.optional(v.union([
   v.boolean(),
   v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(1)),
@@ -32,6 +32,8 @@ export const SongCreateSchema = v.object({
   spotifyTrackId: v.optional(v.nullable(v.string())),
   albumArt: v.optional(v.nullable(v.string())),
   capo: v.optional(v.nullable(v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(12)))),
+  transpose: v.optional(v.pipe(v.number(), v.integer(), v.minValue(-12), v.maxValue(12))),
+  customLabels: v.optional(v.array(v.pipe(v.string(), v.trim(), v.minLength(1)))),
   notInPlaylist: BoolInt,
 })
 

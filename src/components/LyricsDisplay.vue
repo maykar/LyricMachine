@@ -48,7 +48,9 @@ const SEP_COLOR = 'rgba(255,255,255,0.59)'
 
 // Caches
 const fontCache = new Map()       // layout results keyed by (lyricsHash × dims × merge)
-const segmentsCache = new Map()   // prepareWithSegments keyed by (line:fontSize)
+const prepareCache = new Map()    // prepare() results keyed by line text (font-size-independent)
+const segmentsCache = new Map()   // prepareWithSegments keyed by line text
+const SEGMENTS_CACHE_MAX = 2000   // LRU cap — clear all when exceeded
 
 // Theme color
 let cachedTextColor = 'rgba(255,255,255,1)'
@@ -72,7 +74,7 @@ function computeGeometryPure(W, H, remPx, cols) {
   const paddingH = 3 * remPx
   const paddingV = 3 * remPx
   const paddingTopExtra = 0.3125 * remPx
-  const paddingBottomExtra = 0.5 * remPx  // safety buffer: other cols may wrap more than firstColLines
+  const paddingBottomExtra = 0.25 * remPx  // sub-pixel rounding buffer
   const gap = cols === 3 ? 2 * remPx : 3 * remPx
   const colW = (W - 2 * paddingH - (cols - 1) * gap) / cols
   const availH = H - 2 * paddingV - paddingTopExtra - paddingBottomExtra
@@ -95,19 +97,39 @@ function getCacheKey(lyrics, merge) {
 }
 
 // ─── Pretext helpers ──────────────────────────────────────────────────────────
-function findBestFont(lines, colWidth, availableHeight) {
-  const preparedLines = lines.filter(l => l.trim()).map(l => prepare(l, FONT_SPEC))
-  if (!preparedLines.length) return MAX_FONT
+
+// Split lines into columns, trim leading/trailing blanks per column (matching draw()),
+// and return the tallest column's visual line count at a given font size.
+function tallestColVisualLines(allLines, cols, colWidth, fontSizePx) {
+  const perCol = Math.ceil(allLines.length / cols)
+  const scaledW = colWidth * REF_PX / fontSizePx
+  const refLH = REF_PX * LINE_HEIGHT_RATIO
+  let maxLines = 0
+  for (let c = 0; c < cols; c++) {
+    const raw = allLines.slice(c * perCol, (c + 1) * perCol)
+    let first = raw.findIndex(l => l.trim())
+    if (first === -1) continue
+    let last = raw.length - 1
+    while (last > first && !raw[last].trim()) last--
+    let n = 0
+    for (let i = first; i <= last; i++) {
+      if (!raw[i].trim()) continue
+      let p = prepareCache.get(raw[i])
+      if (!p) { p = prepare(raw[i], FONT_SPEC); prepareCache.set(raw[i], p) }
+      n += layout(p, scaledW, refLH).lineCount
+    }
+    if (n > maxLines) maxLines = n
+  }
+  return maxLines
+}
+
+function findBestFont(allLines, cols, colWidth, availableHeight) {
+  if (!allLines.some(l => l.trim())) return MAX_FONT
   let lo = MIN_FONT, hi = MAX_FONT, best = 0
   while (lo <= hi) {
     const mid = Math.floor((lo + hi) / 2)
-    const scaledWidth = colWidth * REF_PX / mid
-    const refLineHeight = REF_PX * LINE_HEIGHT_RATIO
-    let totalLines = 0
-    for (const p of preparedLines) {
-      totalLines += layout(p, scaledWidth, refLineHeight).lineCount
-    }
-    if (totalLines * mid * LINE_HEIGHT_RATIO <= availableHeight) {
+    const maxLines = tallestColVisualLines(allLines, cols, colWidth, mid)
+    if (maxLines * mid * LINE_HEIGHT_RATIO <= availableHeight) {
       best = mid; lo = mid + 1
     } else {
       hi = mid - 1
@@ -126,7 +148,9 @@ function mergeShortLines(lines, fontSizePx, colWidth) {
     const nextHasRepeat = i + 1 < lines.length && /\(x\d+\)$/.test(lines[i + 1])
     if (!hasRepeat && !nextHasRepeat && i + 1 < lines.length && lines[i + 1].trim()) {
       const candidate = line + ' — ' + lines[i + 1]
-      const { lineCount } = layout(prepare(candidate, FONT_SPEC), colWidth * REF_PX / fontSizePx, REF_PX * LINE_HEIGHT_RATIO)
+      let p = prepareCache.get(candidate)
+      if (!p) { p = prepare(candidate, FONT_SPEC); prepareCache.set(candidate, p) }
+      const { lineCount } = layout(p, colWidth * REF_PX / fontSizePx, REF_PX * LINE_HEIGHT_RATIO)
       if (lineCount === 1) { result.push(candidate); i += 2; continue }
     }
     result.push(line); i++
@@ -148,10 +172,6 @@ function collapseRepeats(lines) {
   return result
 }
 
-function firstColLines(lines, cols) {
-  return lines.slice(0, Math.ceil(lines.length / cols))
-}
-
 // ─── Auto layout: binary search for optimal font, prefer 2 cols ───────────────
 function autoLayout(collapsed) {
   // Prefer 2 cols (wider = more readable). Only use 3 cols if 2 fails.
@@ -159,13 +179,13 @@ function autoLayout(collapsed) {
     const g = computeGeometry(cols)
     if (!g) continue
     let lines = collapsed
-    let best = findBestFont(firstColLines(collapsed, cols), g.colW, g.availH)
+    let best = findBestFont(collapsed, cols, g.colW, g.availH)
     if (best < MIN_FONT) continue
 
     if (mergeMode.value) {
       const merged = mergeShortLines(collapsed, best, g.colW)
       if (merged.length < collapsed.length) {
-        const bestM = findBestFont(firstColLines(merged, cols), g.colW, g.availH)
+        const bestM = findBestFont(merged, cols, g.colW, g.availH)
         if (bestM >= MIN_FONT) { lines = mergeShortLines(collapsed, bestM, g.colW); best = bestM }
       }
     }
@@ -178,7 +198,8 @@ function autoLayout(collapsed) {
   if (!g3) return null
   for (let pages = 2; pages <= 10; pages++) {
     const perCol = Math.ceil(collapsed.length / (3 * pages))
-    const best = findBestFont(collapsed.slice(0, perCol), g3.colW, g3.availH)
+    const pageLines = collapsed.slice(0, perCol * 3)
+    const best = findBestFont(pageLines, 3, g3.colW, g3.availH)
     if (best >= MIN_FONT) {
       return { allLines: collapsed, columnCount: 3, linesPerPage: perCol * 3,
         totalPages: pages, calculatedFontSize: best, colWidth: g3.colW, availableHeight: g3.availH }
@@ -190,15 +211,9 @@ function autoLayout(collapsed) {
 }
 
 // ─── Manual layout: find simplest cols/pages that fit a fixed font ────────────
-function checkFitsAtFont(lines, colWidth, availH, font) {
-  const scaledW = colWidth * REF_PX / font
-  const refLH = REF_PX * LINE_HEIGHT_RATIO
-  let n = 0
-  for (const line of lines) {
-    if (!line.trim()) continue
-    n += layout(prepare(line, FONT_SPEC), scaledW, refLH).lineCount
-  }
-  return n * font * LINE_HEIGHT_RATIO <= availH
+function checkFitsAtFont(allLines, cols, colWidth, availH, font) {
+  const maxLines = tallestColVisualLines(allLines, cols, colWidth, font)
+  return maxLines * font * LINE_HEIGHT_RATIO <= availH
 }
 
 function applyAutoResult(r) {
@@ -218,7 +233,7 @@ function applyLayoutAtFont(collapsed, mergedLines, targetFont) {
   for (const cols of [2, 3]) {
     const g = computeGeometry(cols)
     if (!g) continue
-    if (checkFitsAtFont(firstColLines(mergedLines, cols), g.colW, g.availH, targetFont)) {
+    if (checkFitsAtFont(mergedLines, cols, g.colW, g.availH, targetFont)) {
       allLines.value = mergedLines
       columnCount.value = cols
       linesPerPage.value = mergedLines.length
@@ -237,7 +252,7 @@ function applyLayoutAtFont(collapsed, mergedLines, targetFont) {
   storedAvailableHeight.value = g3.availH
   for (let pages = 2; pages <= 10; pages++) {
     const perCol = Math.ceil(collapsed.length / (3 * pages))
-    if (checkFitsAtFont(collapsed.slice(0, perCol), g3.colW, g3.availH, targetFont)) {
+    if (checkFitsAtFont(collapsed.slice(0, perCol * 3), 3, g3.colW, g3.availH, targetFont)) {
       linesPerPage.value = perCol * 3
       totalPages.value = pages
       currentPage.value = Math.min(currentPage.value, pages)
@@ -350,6 +365,7 @@ function draw() {
       // Get or cache prepareWithSegments — keyed by line text only.
       // Uses REF_PX font spec + scaled colW so cache is font-size-independent.
       if (!segmentsCache.has(line)) {
+        if (segmentsCache.size >= SEGMENTS_CACHE_MAX) segmentsCache.clear()
         segmentsCache.set(line, prepareWithSegments(line, FONT_SPEC))
       }
       const scaledColW = colW * REF_PX / fs
@@ -476,6 +492,9 @@ watch(() => props.lyrics, () => {
   showAltColors.value = props.initialAltColors !== false
   displayFontSize = -1 // snap to new song's size without animating
   lastW = 0; lastH = 0 // force rafLoop to recalculate next frame
+  // Evict stale caches from previous song
+  prepareCache.clear()
+  segmentsCache.clear()
 })
 
 watch(() => props.initialMerge, (val) => {

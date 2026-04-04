@@ -12,21 +12,21 @@ The Express API is mounted as Vite middleware in dev and as standalone Express i
 1. **Create or modify a handler** in `server/` (e.g., `server/myFeature.js`)
 2. Export a setup function that receives route helpers:
    ```js
-   export function setupMyRoutes(server, { get, post, json }) { ... }
+   export function setupMyRoutes(server, { get, post, put, json }) { ... }
    ```
 3. Register it in `server/api.js` inside `setupAPI()`:
    ```js
    import { setupMyRoutes } from './myFeature.js'
    // inside setupAPI:
-   setupMyRoutes(server, { get, post, json })
+   setupMyRoutes(server, { get, post, put, json })
    ```
 
 ## Route Helper Pattern
 
-Use the `get`, `post`, and `json` helpers provided by `api.js`:
+Use the `get`, `post`, `put`, and `json` helpers provided by `api.js`:
 
 ```js
-export function setupMyRoutes(server, { get, post, json }) {
+export function setupMyRoutes(server, { get, post, put, json }) {
   // GET endpoint
   get(server, '/api/my-endpoint', async (req, res) => {
     const data = { ok: true }
@@ -35,6 +35,13 @@ export function setupMyRoutes(server, { get, post, json }) {
 
   // POST endpoint with body parsing
   post(server, '/api/my-endpoint', async (req, res) => {
+    const body = await parseBody(req)
+    // ... logic
+    json(res, { ok: true })
+  })
+
+  // PUT endpoint with body parsing
+  put(server, '/api/my-endpoint/:id', async (req, res) => {
     const body = await parseBody(req)
     // ... logic
     json(res, { ok: true })
@@ -48,6 +55,7 @@ export function setupMyRoutes(server, { get, post, json }) {
 |--------|-------------|
 | `get(server, path, handler)` | Register a GET route |
 | `post(server, path, handler)` | Register a POST route |
+| `put(server, path, handler)` | Register a PUT route |
 | `json(res, data, status?)` | Send JSON response (defaults to 200) |
 | `parseBody(req)` | Parse JSON request body (import from `api.js`) |
 

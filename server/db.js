@@ -44,7 +44,7 @@ db.exec(`
     font_adjust     INTEGER DEFAULT 0,
     merge           INTEGER DEFAULT 0,
     separators      INTEGER DEFAULT 0,
-    alt_colors      INTEGER DEFAULT 1,
+    alt_colors      INTEGER DEFAULT 0,
     label           TEXT DEFAULT 'fresh',
     played          INTEGER DEFAULT 0,
     play_count      INTEGER DEFAULT 0,
@@ -53,12 +53,17 @@ db.exec(`
     spotify_track_id TEXT,
     album_art       TEXT,
     capo            INTEGER,
+    transpose       INTEGER DEFAULT 0,
+    custom_labels   TEXT DEFAULT '[]',
     not_in_playlist INTEGER DEFAULT 0,
     sort_order      INTEGER DEFAULT 0,
     created_at      TEXT DEFAULT (datetime('now')),
     updated_at      TEXT DEFAULT (datetime('now'))
   )
 `)
+try {
+  db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_songs_title_trackid ON songs(title, COALESCE(spotify_track_id, ''))`)
+} catch { /* expression index may not be supported on all SQLite builds */ }
 // Settings table (must exist before migrations, which use it for schema_version)
 db.exec(`
   CREATE TABLE IF NOT EXISTS settings (
@@ -96,44 +101,15 @@ function runMigrations() {
 
     console.log(`Running migration ${file}...`)
 
-    // Special handling for 002: table recreation to drop UNIQUE constraint
-    if (num === 2) {
-      try {
-        const tableInfo = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='songs'").get()
-        if (tableInfo && tableInfo.sql.includes('UNIQUE')) {
-          db.exec('BEGIN')
-          try {
-            // Recreate table without UNIQUE on title
-            const cols = db.prepare('PRAGMA table_info(songs)').all()
-            const colDefs = cols.map(c => {
-              let def = `${c.name} ${c.type || 'TEXT'}`
-              if (c.pk) def += ' PRIMARY KEY AUTOINCREMENT'
-              if (c.notnull && !c.pk) def += ' NOT NULL'
-              if (c.dflt_value !== null && !c.pk) def += ` DEFAULT ${c.dflt_value}`
-              return def
-            }).join(',\n        ')
-
-            db.exec(`CREATE TABLE songs_new (${colDefs})`)
-            db.exec(`INSERT INTO songs_new SELECT * FROM songs`)
-            db.exec(`DROP TABLE songs`)
-            db.exec(`ALTER TABLE songs_new RENAME TO songs`)
-            db.exec('COMMIT')
-            console.log('Migration 002: UNIQUE constraint removed from title')
-          } catch (err) {
-            db.exec('ROLLBACK')
-            console.error('Migration 002 table recreation failed:', err.message)
-            continue
-          }
-        }
-      } catch { /* fresh install, no UNIQUE to remove */ }
-    }
-
-    // Run the SQL file — strip comments and execute the whole batch
+    // Run the SQL file — strip comments and execute each statement
     try {
       const raw = readFileSync(join(migrationsDir, file), 'utf8')
       const sql = raw.replace(/--.*$/gm, '').trim()
       if (sql) {
-        try { db.exec(sql) } catch { /* IF NOT EXISTS / IF EXISTS guards handle duplicates */ }
+        // Execute each statement separately (ALTER TABLE doesn't support multi-statement)
+        for (const stmt of sql.split(';').map(s => s.trim()).filter(Boolean)) {
+          try { db.exec(stmt) } catch { /* IF NOT EXISTS / IF EXISTS guards handle duplicates */ }
+        }
       }
       // Update schema version
       db.exec(`INSERT INTO settings (key, value) VALUES ('schema_version', '${num}') ON CONFLICT(key) DO UPDATE SET value = '${num}'`)
@@ -153,14 +129,17 @@ const stmts = {
   songByTitle:  db.prepare('SELECT * FROM songs WHERE title = ?'),
   songByTitleAndTrackId: db.prepare('SELECT * FROM songs WHERE title = ? AND COALESCE(spotify_track_id, \'\') = COALESCE(?, \'\')'),
   songCount:    db.prepare('SELECT COUNT(*) AS count FROM songs'),
+  summarySongs: db.prepare("SELECT id, title, font_adjust, merge, separators, alt_colors, label, played, play_count, custom_structure, spotify_track_id, album_art, capo, transpose, custom_labels, not_in_playlist, sort_order, CASE WHEN lyrics IS NOT NULL AND lyrics != '' THEN 1 ELSE 0 END as has_lyrics, CASE WHEN custom_chords IS NOT NULL AND custom_chords != '[]' THEN 1 ELSE 0 END as has_chords FROM songs ORDER BY sort_order ASC, id ASC"),
 
   insertSong:   db.prepare(`
     INSERT INTO songs (title, lyrics, font_adjust, merge, separators, alt_colors,
       label, played, play_count, custom_chords, custom_structure,
-      spotify_track_id, album_art, capo, not_in_playlist, sort_order)
+      spotify_track_id, album_art, capo, transpose, custom_labels,
+      not_in_playlist, sort_order)
     VALUES (@title, @lyrics, @font_adjust, @merge, @separators, @alt_colors,
       @label, @played, @play_count, @custom_chords, @custom_structure,
-      @spotify_track_id, @album_art, @capo, @not_in_playlist, @sort_order)
+      @spotify_track_id, @album_art, @capo, @transpose, @custom_labels,
+      @not_in_playlist, @sort_order)
   `),
 
   updateSong:  null,  // built dynamically per-request (partial updates)
@@ -195,8 +174,38 @@ function rowToSong(row) {
     spotifyTrackId: row.spotify_track_id,
     albumArt: row.album_art,
     capo: row.capo,
+    transpose: row.transpose || 0,
+    customLabels: row.custom_labels ? JSON.parse(row.custom_labels) : [],
     notInPlaylist: !!row.not_in_playlist,
     sortOrder: row.sort_order,
+    hasLyrics: !!row.lyrics,
+    hasChords: !!row.custom_chords && row.custom_chords !== '[]'
+  }
+}
+
+/** DB row (from summarySongs) → client-friendly object */
+function rowToSongSummary(row) {
+  if (!row) return null
+  return {
+    id: row.id,
+    title: row.title,
+    fontAdjust: row.font_adjust,
+    merge: !!row.merge,
+    separators: !!row.separators,
+    altColors: !!row.alt_colors,
+    label: row.label,
+    played: !!row.played,
+    playCount: row.play_count,
+    customStructure: row.custom_structure || '',
+    spotifyTrackId: row.spotify_track_id,
+    albumArt: row.album_art,
+    capo: row.capo,
+    transpose: row.transpose || 0,
+    customLabels: row.custom_labels ? JSON.parse(row.custom_labels) : [],
+    notInPlaylist: !!row.not_in_playlist,
+    sortOrder: row.sort_order,
+    hasLyrics: !!row.has_lyrics,
+    hasChords: !!row.has_chords
   }
 }
 
@@ -208,7 +217,7 @@ function songToParams(song, sortOrder = 0) {
     font_adjust: song.fontAdjust || 0,
     merge: song.merge ? 1 : 0,
     separators: song.separators ? 1 : 0,
-    alt_colors: song.altColors !== false ? 1 : 0,
+    alt_colors: song.altColors ? 1 : 0,
     label: song.label || 'fresh',
     played: song.played ? 1 : 0,
     play_count: song.playCount || 0,
@@ -217,6 +226,8 @@ function songToParams(song, sortOrder = 0) {
     spotify_track_id: song.spotifyTrackId || null,
     album_art: song.albumArt || null,
     capo: song.capo ?? null,
+    transpose: song.transpose || 0,
+    custom_labels: JSON.stringify(song.customLabels || []),
     not_in_playlist: song.notInPlaylist ? 1 : 0,
     sort_order: sortOrder,
   }
@@ -229,19 +240,24 @@ const FIELD_MAP = {
   label: 'label', played: 'played', playCount: 'play_count',
   customChords: 'custom_chords', customStructure: 'custom_structure',
   spotifyTrackId: 'spotify_track_id', albumArt: 'album_art',
-  capo: 'capo', notInPlaylist: 'not_in_playlist', sortOrder: 'sort_order',
+  capo: 'capo', transpose: 'transpose', customLabels: 'custom_labels',
+  notInPlaylist: 'not_in_playlist', sortOrder: 'sort_order',
 }
 
 // Fields that are booleans in client but INTEGER 0/1 in DB
 const BOOL_FIELDS = new Set(['merge', 'separators', 'alt_colors', 'played', 'not_in_playlist'])
 
 // Fields that are JSON in client but TEXT in DB
-const JSON_FIELDS = new Set(['custom_chords'])
+const JSON_FIELDS = new Set(['custom_chords', 'custom_labels'])
 
 // --- Public API ---
 
 export function getAllSongs() {
   return stmts.allSongs.all().map(rowToSong)
+}
+
+export function getSongsSummary() {
+  return stmts.summarySongs.all().map(rowToSongSummary)
 }
 
 export function getSong(id) {
@@ -282,6 +298,9 @@ export function upsertSong(song) {
   return createSong(song)
 }
 
+// --- Prepared statement cache for partial updates ---
+const _updateStmtCache = new Map()
+
 export function updateSong(id, fields) {
   const setClauses = []
   const values = []
@@ -297,7 +316,7 @@ export function updateSong(id, fields) {
     if (BOOL_FIELDS.has(col)) {
       values.push(value ? 1 : 0)
     } else if (JSON_FIELDS.has(col)) {
-      values.push(value ? JSON.stringify(value) : null)
+      values.push(value != null ? JSON.stringify(value) : null)
     } else {
       values.push(value ?? null)
     }
@@ -308,7 +327,14 @@ export function updateSong(id, fields) {
   setClauses.push("updated_at = datetime('now')")
   values.push(id)
 
-  db.prepare(`UPDATE songs SET ${setClauses.join(', ')} WHERE id = ?`).run(...values)
+  // Cache prepared statements by column combination to prevent memory leak
+  const cacheKey = setClauses.slice(0, -1).join(',')  // exclude updated_at (always present)
+  let stmt = _updateStmtCache.get(cacheKey)
+  if (!stmt) {
+    stmt = db.prepare(`UPDATE songs SET ${setClauses.join(', ')} WHERE id = ?`)
+    _updateStmtCache.set(cacheKey, stmt)
+  }
+  stmt.run(...values)
   return getSong(id)
 }
 

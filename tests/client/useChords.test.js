@@ -158,7 +158,7 @@ describe('useChords', () => {
       await chords.onResetChords()
       expect(favorites.value[0].customChords).toBeUndefined()
       expect(favorites.value[0].customStructure).toBeUndefined()
-      expect(api.updateSong).toHaveBeenCalledWith(7, { customChords: null, customStructure: '' })
+      expect(api.updateSong).toHaveBeenCalledWith(7, { customChords: null, customStructure: '', transpose: 0 })
     })
   })
 })

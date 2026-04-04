@@ -54,6 +54,13 @@
                 <input type="checkbox" v-model="filterNotInPlaylist" />
                 <span>Not in playlist</span>
               </label>
+              <template v-if="customLabelsStore.labels.length">
+                <div class="filter-divider"></div>
+                <label v-for="l in customLabelsStore.labels" :key="l" class="filter-item">
+                  <input type="checkbox" v-model="filterCustomLabels" :value="l" />
+                  <span class="filter-label-dot text-truncate" style="--lc:var(--accent)">{{ l }}</span>
+                </label>
+              </template>
             </div>
           </div>
           <div v-if="favorites.length" class="filter-wrapper">
@@ -199,6 +206,7 @@
         :y="ctxMenu.y"
         :fav="ctxMenu.fav"
         @set-label="setLabelFromCtx"
+        @toggle-custom-label="toggleCustomLabelFromCtx"
         @toggle-played="incrementPlayedFromCtx"
         @edit-count="editPlayCountFromCtx"
         @clear-count="clearPlayCountFromCtx"
@@ -227,9 +235,11 @@ import { splitTitle } from '../utils/titleParser.js'
 import { LABEL_OPTIONS } from '../constants/labels.js'
 import { api } from '../api.js'
 import { adjustDropdown } from '../utils/adjustDropdown.js'
+import { useCustomLabelsStore } from '../stores/customLabels.js'
 
 // Storage keys removed — all persistence via server API
 const { favorites } = useFavorites()
+const customLabelsStore = useCustomLabelsStore()
 const labelOptions = LABEL_OPTIONS
 
 const emit = defineEmits(['close', 'go-home', 'select', 'updated', 'defaults-changed', 'toggle-settings', 'open-randomizer', 'open-kanban'])
@@ -246,6 +256,7 @@ const filterGettingThere = ref(false)
 const filterInSetlist = ref(false)
 const filterIgnored = ref(false)
 const filterNotInPlaylist = ref(false)
+const filterCustomLabels = ref([])
 const showFilterDropdown = ref(false)
 const sortBy = ref('none')
 const sortDir = ref('asc')
@@ -322,6 +333,22 @@ function setLabelFromCtx(label) {
     emit('updated')
   }
   ctxMenu.show = false
+}
+
+function toggleCustomLabelFromCtx(labelName) {
+  if (ctxMenu.index >= 0) {
+    const fav = favorites.value[ctxMenu.index]
+    const list = fav.customLabels || []
+    if (list.includes(labelName)) {
+      fav.customLabels = list.filter(l => l !== labelName)
+    } else {
+      fav.customLabels = [...list, labelName]
+    }
+    if (fav.id) {
+      api.updateSong(fav.id, { customLabels: fav.customLabels })
+    }
+    emit('updated')
+  }
 }
 
 function deleteFromCtx() {
@@ -412,6 +439,7 @@ const activeFilterCount = computed(() => {
   if (filterInSetlist.value) count++
   if (filterIgnored.value) count++
   if (filterNotInPlaylist.value) count++
+  if (filterCustomLabels.value.length > 0) count += filterCustomLabels.value.length
   return count
 })
 
@@ -437,11 +465,13 @@ useEventListener(window, 'keydown', (e) => {
   }
 }, { capture: true })
 
-watch(hidePlayed, v => {
-  api.setFilters({ hidePlayed: v, noChords: filterNoChords.value })
-})
-watch(filterNoChords, v => {
-  api.setFilters({ hidePlayed: hidePlayed.value, noChords: v })
+watch([hidePlayed, filterNoChords, filterFresh, filterGettingThere, filterInSetlist, filterIgnored, filterNotInPlaylist, filterCustomLabels], () => {
+  favPage.value = 1
+  api.setFilters({ 
+    hidePlayed: hidePlayed.value, 
+    noChords: filterNoChords.value,
+    filterCustomLabels: filterCustomLabels.value 
+  })
 })
 async function onNewSong({ title, lyrics }) {
   // Add to favorites via API
@@ -505,9 +535,9 @@ function recalcLayout() {
 const displayedFavorites = computed(() => {
   let list = favorites.value
   if (hidePlayed.value) list = list.filter(f => !f.played)
-  if (filterNoChords.value) list = list.filter(f => !f.customChords || f.customChords.length === 0)
+  if (filterNoChords.value) list = list.filter(f => !f.hasChords)
   if (filterNotInPlaylist.value) list = list.filter(f => !!f.notInPlaylist)
-  const anyLabel = filterFresh.value || filterGettingThere.value || filterInSetlist.value || filterIgnored.value
+  const anyLabel = filterFresh.value || filterGettingThere.value || filterInSetlist.value || filterIgnored.value || filterCustomLabels.value.length > 0
   if (anyLabel) {
     list = list.filter(f => {
       const lbl = f.label || 'fresh'
@@ -515,6 +545,10 @@ const displayedFavorites = computed(() => {
       if (filterGettingThere.value && lbl === 'getting-there') return true
       if (filterInSetlist.value && lbl === 'in-setlist') return true
       if (filterIgnored.value && lbl === 'ignored') return true
+      if (filterCustomLabels.value.length > 0) {
+        const cLabels = f.customLabels || []
+        if (filterCustomLabels.value.some(l => cLabels.includes(l))) return true
+      }
       return false
     })
   } else {
@@ -723,6 +757,7 @@ onMounted(async () => {
   if (filters) {
     if (filters.hidePlayed !== undefined) hidePlayed.value = filters.hidePlayed
     if (filters.noChords !== undefined) filterNoChords.value = filters.noChords
+    if (filters.filterCustomLabels !== undefined) filterCustomLabels.value = filters.filterCustomLabels
   }
   inputRef.value?.focus()
 

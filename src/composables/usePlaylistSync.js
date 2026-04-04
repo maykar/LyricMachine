@@ -1,20 +1,32 @@
 import { normalize } from '../utils/normalize.js'
 import { api } from '../api.js'
+import { useToast } from './useToast.js'
 
 export function usePlaylistSync(favorites, userDefaults) {
 
   async function syncPlaylist() {
+    const { showToast, updateToast, dismissToast } = useToast()
+    const toastId = showToast('Syncing Spotify...', { type: 'info', duration: 0 })
     try {
       const data = await api.getPlaylistTracks()
-      if (!data?.tracks?.length) return
+      if (!data?.tracks?.length) {
+        updateToast(toastId, 'Sync complete. No tracks found.', 'info')
+        setTimeout(() => dismissToast(toastId), 3000)
+        return
+      }
 
       const favs = favorites.value
       const existingNormalized = new Set(favs.map(f => normalize(f.title)))
       const newTracks = data.tracks.filter(t => !existingNormalized.has(normalize(t.title)))
 
-      if (newTracks.length === 0) return
+      if (newTracks.length === 0) {
+        updateToast(toastId, 'Sync complete. No new tracks.', 'info')
+        setTimeout(() => dismissToast(toastId), 3000)
+        return
+      }
 
       console.log(`Playlist sync: fetching lyrics for ${newTracks.length} new songs...`)
+      updateToast(toastId, `Syncing... fetching lyrics for ${newTracks.length} tracks`, 'info')
 
       for (const t of newTracks) {
         let lyrics = ''
@@ -54,8 +66,13 @@ export function usePlaylistSync(favorites, userDefaults) {
 
         console.log(`Playlist sync: added "${t.track}" ${lyrics ? '(with lyrics)' : '(no lyrics found)'}`)
       }
+      
+      updateToast(toastId, `Sync complete. Added ${newTracks.length} tracks.`, 'success')
+      setTimeout(() => dismissToast(toastId), 3000)
     } catch (e) {
       console.error('Playlist sync failed:', e.message)
+      updateToast(toastId, 'Spotify sync failed', 'error')
+      setTimeout(() => dismissToast(toastId), 3000)
     }
   }
 

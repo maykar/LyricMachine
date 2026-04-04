@@ -4,6 +4,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 vi.mock('../../src/api.js', () => ({
   api: {
     getSongs: vi.fn(),
+    getSongsSummary: vi.fn(),
     createSong: vi.fn(),
     updateSong: vi.fn(),
     deleteSong: vi.fn(),
@@ -36,9 +37,9 @@ describe('useFavorites', () => {
   })
 
   describe('loadFavorites', () => {
-    it('populates favorites from api.getSongs', async () => {
+    it('populates favorites from api.getSongsSummary', async () => {
       const songs = [{ id: 1, title: 'Song A' }, { id: 2, title: 'Song B' }]
-      api.getSongs.mockResolvedValue(songs)
+      api.getSongsSummary.mockResolvedValue(songs)
 
       await fav.loadFavorites()
       expect(fav.favorites.value).toEqual(songs)
@@ -46,7 +47,7 @@ describe('useFavorites', () => {
 
     it('keeps existing favorites if api returns null', async () => {
       fav.favorites.value = [{ id: 1, title: 'Existing' }]
-      api.getSongs.mockResolvedValue(null)
+      api.getSongsSummary.mockResolvedValue(null)
 
       await fav.loadFavorites()
       expect(fav.favorites.value).toHaveLength(1)

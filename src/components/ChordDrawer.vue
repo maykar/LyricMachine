@@ -7,9 +7,9 @@
         <button class="chord-icon-btn cancel" @click="editing = false" title="Cancel"><MdiIcon :path="mdiClose" :size="16" /></button>
       </template>
       <template v-else>
-        <button v-if="found && sections.length" class="chord-icon-btn" @click="transposeAll(-1)" title="Transpose down"><MdiIcon :path="mdiChevronLeft" :size="16" /></button>
+        <button v-if="found && sections.length" class="chord-icon-btn" @click="changeTranspose(-1)" title="Transpose down"><MdiIcon :path="mdiChevronLeft" :size="16" /></button>
         <button v-if="found && sections.length" class="chord-icon-btn reset" @click="resetTranspose" title="Reset"><MdiIcon :path="mdiRefresh" :size="16" /></button>
-        <button v-if="found && sections.length" class="chord-icon-btn" @click="transposeAll(1)" title="Transpose up"><MdiIcon :path="mdiChevronRight" :size="16" /></button>
+        <button v-if="found && sections.length" class="chord-icon-btn" @click="changeTranspose(1)" title="Transpose up"><MdiIcon :path="mdiChevronRight" :size="16" /></button>
         <button class="chord-icon-btn" @click="startEditing" title="Edit chords"><MdiIcon :path="mdiPencil" :size="16" /></button>
         <button class="chord-text-btn" @click="$emit('reset-chords')" title="Reset to original">Reset</button>
       </template>
@@ -22,8 +22,8 @@
       <template v-if="!editing">
         <div v-if="capo" class="chord-status" style="margin-bottom: 0.4rem;">Capo: fret {{ capo }}</div>
         <div v-if="structure" class="chord-structure">{{ formatStructure(structure) }}</div>
-        <div v-if="sections.length" class="chord-sections">
-          <div v-for="(s, i) in sections" :key="i" class="chord-section">
+        <div v-if="displaySections.length" class="chord-sections">
+          <div v-for="(s, i) in displaySections" :key="i" class="chord-section">
             <span class="chord-section-name">{{ s.section }}</span>
             <span class="chord-section-chords">{{ s.chords }}</span>
           </div>
@@ -59,7 +59,7 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import MdiIcon from './MdiIcon.vue'
 import {
   mdiCheck, mdiClose, mdiChevronLeft, mdiChevronRight,
@@ -76,15 +76,22 @@ const props = defineProps({
   structure: { type: String, default: '' },
   capo: { type: Number, default: null },
   hasCustomChords: { type: Boolean, default: false },
+  transpose: { type: Number, default: 0 },
 })
 
-const emit = defineEmits(['update:chords', 'reset-chords'])
+const emit = defineEmits(['update:chords', 'reset-chords', 'change-transpose'])
 
 const editing = ref(false)
 const editSections = ref([])
 const editStructure = ref('')
-const transposeOffset = ref(0)
-const originalSections = ref([])
+
+const displaySections = computed(() => {
+  if (!props.transpose) return props.sections
+  return props.sections.map(s => ({
+    section: s.section,
+    chords: transposeChordsString(s.chords, props.transpose),
+  }))
+})
 
 function startEditing() {
   editSections.value = props.sections.length
@@ -170,31 +177,12 @@ function transposeChordsString(chordsStr, semitones) {
   }).join(' · ')
 }
 
-function transposeAll(semitones) {
-  // Snapshot original chords on first transpose
-  if (transposeOffset.value === 0) {
-    originalSections.value = props.sections.map(s => ({ ...s }))
-  }
-  transposeOffset.value += semitones
-  const transposed = props.sections.map(s => ({
-    section: s.section,
-    chords: transposeChordsString(s.chords, semitones),
-  }))
-  emit('update:chords', {
-    sections: transposed,
-    structure: props.structure,
-  })
+function changeTranspose(semitones) {
+  emit('change-transpose', semitones)
 }
 
 function resetTranspose() {
-  if (originalSections.value.length) {
-    emit('update:chords', {
-      sections: originalSections.value.map(s => ({ ...s })),
-      structure: props.structure,
-    })
-  }
-  transposeOffset.value = 0
-  originalSections.value = []
+  emit('change-transpose', -props.transpose)
 }
 </script>
 

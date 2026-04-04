@@ -69,10 +69,10 @@ export function json(res, data, status = 200) {
   }
 }
 
-/** Extract numeric ID from URL path like /api/songs/42 (handles trailing slashes and query strings) */
+/** Extract numeric ID from URL path relative to mount point (e.g., /42) */
 function extractId(req) {
   const path = req.url.split('?')[0].replace(/\/+$/, '')
-  const match = path.match(/\/(\d+)$/)
+  const match = path.match(/^\/(\d+)$/)
   return match ? parseInt(match[1], 10) : NaN
 }
 
@@ -127,11 +127,28 @@ export function setupAPI(server) {
 
   // ===== Songs CRUD =====
 
-  get(server, '/api/songs', (req, res, next) => {
-    // Only match exact /api/songs, not /api/songs/42 (prefix matching)
-    if (req.url !== '/' && req.url !== '' && req.url !== '?') {
-      if (!req.url.startsWith('?')) return next()
+  // GET /api/songs/summary (lazy load lyrics)
+  get(server, '/api/songs/summary', (req, res, next) => {
+    // Need to strictly match /api/songs/summary, not /api/songs/summary/...
+    if (req.url !== '/' && req.url !== '' && !req.url.startsWith('?')) {
+      return next()
     }
+    try {
+      json(res, db.getSongsSummary())
+    } catch (err) {
+      json(res, { error: err.message }, 500)
+    }
+  })
+
+  get(server, '/api/songs', (req, res, next) => {
+    // If there's an ID, skip to the single-song route below
+    if (!isNaN(extractId(req))) return next()
+    // Otherwise it's the list route (allows query strings)
+    if (req.url !== '/' && req.url !== '' && !req.url.startsWith('?')) {
+      // Summary or future sub-routes
+      return next()
+    }
+    
     try {
       json(res, db.getAllSongs())
     } catch (err) {

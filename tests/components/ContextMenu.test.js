@@ -10,6 +10,11 @@ vi.mock('../../src/components/MdiIcon.vue', () => ({
   },
 }))
 
+// Mock customLabels store to avoid Pinia dependency
+vi.mock('../../src/stores/customLabels.js', () => ({
+  useCustomLabelsStore: () => ({ labels: [], loading: false, load: vi.fn(), save: vi.fn(), addLabel: vi.fn(), removeLabel: vi.fn() }),
+}))
+
 const defaultProps = {
   show: true,
   x: 100,

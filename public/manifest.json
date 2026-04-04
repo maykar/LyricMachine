@@ -1,0 +1,17 @@
+{
+  "name": "LyricMachine",
+  "short_name": "LyricMachine",
+  "description": "Live lyrics display and song management for band jams",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#181a20",
+  "theme_color": "#e8b341",
+  "icons": [
+    {
+      "src": "/SloshRat.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}

@@ -32,6 +32,13 @@
             <input type="checkbox" value="ignored" v-model="activeFilters" />
             <span class="filter-label-dot" style="--lc:#7f8c8d">Ignored</span>
           </label>
+          <template v-if="customLabelsStore.labels.length">
+            <div style="height:1px;background:var(--border);margin:0.5rem 0;"></div>
+            <label v-for="l in customLabelsStore.labels" :key="l" class="filter-check-item">
+              <input type="checkbox" :value="l" v-model="activeFilters" />
+              <span class="filter-label-dot text-truncate" style="--lc:var(--accent)">{{ l }}</span>
+            </label>
+          </template>
         </div>
       </div>
 
@@ -132,6 +139,7 @@
       :y="ctxMenu.y"
       :fav="ctxMenu.fav"
       @set-label="setLabelFromCtx"
+      @toggle-custom-label="toggleCustomLabelFromCtx"
       @toggle-played="togglePlayedFromCtx"
       @edit-count="editCountFromCtx"
       @clear-count="clearCountFromCtx"
@@ -153,6 +161,7 @@ import { mdiClose, mdiCog } from '@mdi/js'
 import confettiModule from 'canvas-confetti'
 import { adjustDropdown } from '../utils/adjustDropdown.js'
 import { api } from '../api.js'
+import { useSpotifyEmbed } from '../composables/useSpotifyEmbed.js'
 
 const props = defineProps({
   favorites: { type: Array, required: true },
@@ -174,6 +183,10 @@ const spotifyId = ref(null)
 let spotifyPlayTimer = null
 let lastTickTimer = null
 
+// Spotify playback: SDK (Premium) primary, IFrame embed (free) fallback
+const embed = useSpotifyEmbed()
+const hasSDK = () => !!window.__spotify?.deviceId
+
 const shuffled = ref([])
 
 function shuffle(arr) {
@@ -186,7 +199,9 @@ function shuffle(arr) {
 }
 
 import { splitTitle } from '../utils/titleParser.js'
+import { useCustomLabelsStore } from '../stores/customLabels.js'
 
+const customLabelsStore = useCustomLabelsStore()
 const activeFilters = ref(['unplayed'])
 const showFilterPanel = ref(false)
 const filterPanelRef = ref(null)
@@ -203,9 +218,15 @@ const filteredFavorites = computed(() => {
   }
 
   // Apply label filters (OR logic — match any selected label)
-  const labelFilters = filters.filter(f => f !== 'unplayed')
-  if (labelFilters.length) {
-    list = list.filter(f => labelFilters.includes(f.label || 'fresh'))
+  const labelFilters = filters.filter(f => f !== 'unplayed' && !customLabelsStore.labels.includes(f))
+  const customLabelFilters = filters.filter(f => customLabelsStore.labels.includes(f))
+
+  if (labelFilters.length || customLabelFilters.length) {
+    list = list.filter(f => {
+      const lbl = f.label || 'fresh'
+      const cLabels = f.customLabels || []
+      return labelFilters.includes(lbl) || customLabelFilters.some(l => cLabels.includes(l))
+    })
   } else {
     // Exclude ignored songs by default when no label filters are active
     list = list.filter(f => f.label !== 'ignored')
@@ -281,6 +302,8 @@ const winnerTrack = computed(() => {
 })
 
 let animFrame = null
+let landResizeHandler = null
+let landHoloFrame = null
 
 let confettiInterval = null
 let lastCenterCardIdx = -1
@@ -372,13 +395,13 @@ function onSpinClick() {
   }
 
   landed.value = false
-  if (land._resizeHandler) {
-    window.removeEventListener('resize', land._resizeHandler)
-    land._resizeHandler = null
+  if (landResizeHandler) {
+    window.removeEventListener('resize', landResizeHandler)
+    landResizeHandler = null
   }
-  if (land._holoFrame) {
-    cancelAnimationFrame(land._holoFrame)
-    land._holoFrame = null
+  if (landHoloFrame) {
+    cancelAnimationFrame(landHoloFrame)
+    landHoloFrame = null
   }
   // Clear inline styles from previous winner
   const prevWinner = document.querySelector('.carousel-card.is-winner')
@@ -393,8 +416,12 @@ function onSpinClick() {
   if (lastTickTimer) { clearTimeout(lastTickTimer); lastTickTimer = null }
 
   // Stop any currently playing Spotify track immediately on re-spin
-  const player = window.__spotify?.player
-  if (player) player.pause().catch(() => {})
+  if (hasSDK()) {
+    const player = window.__spotify?.player
+    if (player) player.pause().catch(() => {})
+  } else {
+    embed.pause()
+  }
 
   if (confettiInterval) { clearInterval(confettiInterval); confettiInterval = null }
   if (fireConfetti) { fireConfetti.reset() }
@@ -428,30 +455,46 @@ function onSpinClick() {
     // Resolved track ID — set eagerly, played later
     let resolvedTrackId = null
 
-    // Helper: actually fire playback on the SDK device
+    // Helper: fire playback — SDK (Premium) or IFrame embed (free) fallback
     function triggerSpotifyPlay(trackId) {
-      if (!trackId || !window.__spotify?.deviceId) return
+      if (!trackId) return
       spotifyId.value = trackId
-      const player = window.__spotify.player
-      const targetUri = `spotify:track:${trackId}`
-      
-      api.playSpotify({ trackId, deviceId: window.__spotify.deviceId })
-        .then(r => {
-          console.log('[Spin] api.playSpotify response:', r)
-          if (!player) return
-          
-          const onStateChange = (state) => {
-            if (!state) return
-            const currentTrack = state.track_window?.current_track
-            if (currentTrack?.uri === targetUri) {
-              player.removeListener('player_state_changed', onStateChange)
-              player.resume().catch(() => {})
+
+      if (hasSDK()) {
+        // Premium path: full-track playback via Web Playback SDK
+        const player = window.__spotify.player
+        const targetUri = `spotify:track:${trackId}`
+        
+        api.playSpotify({ trackId, deviceId: window.__spotify.deviceId })
+          .then(r => {
+            console.log('[Spin] api.playSpotify response:', r)
+            if (!player) return
+            
+            const onStateChange = (state) => {
+              if (!state) return
+              const currentTrack = state.track_window?.current_track
+              if (currentTrack?.uri === targetUri) {
+                player.removeListener('player_state_changed', onStateChange)
+                player.resume().catch(() => {})
+              }
             }
+            player.addListener('player_state_changed', onStateChange)
+            setTimeout(() => player.removeListener('player_state_changed', onStateChange), 10000)
+          })
+          .catch(e => console.error('[Spin] api.playSpotify FAILED:', e))
+      } else {
+        // Free path: 30-second preview via IFrame Embed API
+        embed.preload(trackId)
+        // Play as soon as the embed signals ready, or immediately if already ready
+        const tryPlay = () => {
+          if (embed.isReady()) {
+            embed.play()
+          } else {
+            setTimeout(tryPlay, 100)
           }
-          player.addListener('player_state_changed', onStateChange)
-          setTimeout(() => player.removeListener('player_state_changed', onStateChange), 10000)
-        })
-        .catch(e => console.error('[Spin] api.playSpotify FAILED:', e))
+        }
+        tryPlay()
+      }
     }
 
     // Resolve track ID eagerly (cache lookup or API call)
@@ -483,6 +526,11 @@ function onSpinClick() {
     const startTime = performance.now()
     const duration = 3500 + Math.random() * 1500
     const startOffset = trackOffset.value
+
+    // Preload embed track eagerly so it's ready by play time (only if no SDK)
+    if (!hasSDK() && resolvedTrackId) {
+      embed.preload(resolvedTrackId)
+    }
 
     // Schedule playback ~200ms before the carousel lands
     // Total animation = duration (ease) + 300ms (bounce-back)
@@ -564,7 +612,7 @@ function land() {
   if (winnerCard) recentWinners.add(winnerCard.title)
 
   window.addEventListener('resize', recenterWinner)
-  land._resizeHandler = recenterWinner
+  landResizeHandler = recenterWinner
 
   // Drive holographic shimmer + 3D tilt (no delay needed)
   const FLOAT_DURATION = 8000
@@ -615,7 +663,7 @@ function land() {
     holoFrame = requestAnimationFrame(updateHolo)
   }
   holoFrame = requestAnimationFrame(updateHolo)
-  land._holoFrame = holoFrame
+  landHoloFrame = holoFrame
 
   if (!fireConfetti) return
 
@@ -675,6 +723,20 @@ function setLabelFromCtx(label) {
     emit('updated')
   }
   ctxMenu.show = false
+}
+
+function toggleCustomLabelFromCtx(labelName) {
+  const fav = ctxMenu.fav
+  if (fav) {
+    const list = fav.customLabels || []
+    if (list.includes(labelName)) {
+      fav.customLabels = list.filter(l => l !== labelName)
+    } else {
+      fav.customLabels = [...list, labelName]
+    }
+    if (fav.id) api.updateSong(fav.id, { customLabels: fav.customLabels })
+    emit('updated')
+  }
 }
 
 function togglePlayedFromCtx() {
@@ -758,6 +820,9 @@ onMounted(() => {
   readRem()
   reshuffleCards()
 
+  // Warm up Spotify IFrame embed so it's ready by spin time (free fallback)
+  if (!hasSDK()) embed.warmUp()
+
   // Pre-warm AudioContext immediately — the randomizer is always opened
   // by a user gesture (R key or click) so resume() is allowed here.
   const ctx = getAudioCtx()
@@ -783,10 +848,13 @@ onUnmounted(() => {
   if (lastTickTimer) { clearTimeout(lastTickTimer); lastTickTimer = null }
 
   // Stop Spotify playback when the randomizer modal closes
-  const player = window.__spotify?.player
-  if (player) {
-    player.pause().catch(() => {})
+  if (hasSDK()) {
+    const player = window.__spotify?.player
+    if (player) player.pause().catch(() => {})
   }
+
+  // Destroy embed controller to ensure clean warm-up on next open
+  embed.destroy()
 })
 </script>
 

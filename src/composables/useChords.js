@@ -8,6 +8,7 @@ export function useChords(favorites, currentTitle, isSaved) {
   const chordSections = ref([])
   const chordStructure = ref('')
   const chordCapo = ref(null)
+  const chordTranspose = ref(0)
   const spotifyTrackId = ref(null)
   const showPlayer = ref(false)
 
@@ -53,9 +54,14 @@ export function useChords(favorites, currentTitle, isSaved) {
     chordSections.value = []
     chordStructure.value = ''
     chordCapo.value = null
+    chordTranspose.value = 0
     if (!keepDrawerOpen) spotifyTrackId.value = null
 
     const fav = favorites.value.find(f => f.title === title)
+
+    if (fav) {
+      chordTranspose.value = fav.transpose || 0
+    }
 
     // Load saved chords from favorites
     if (fav && fav.customChords) {
@@ -102,11 +108,25 @@ export function useChords(favorites, currentTitle, isSaved) {
     if (fav) {
       delete fav.customChords
       delete fav.customStructure
+      fav.transpose = 0
       if (fav.id) {
-        api.updateSong(fav.id, { customChords: null, customStructure: '' })
+        api.updateSong(fav.id, { customChords: null, customStructure: '', transpose: 0 })
       }
     }
     fetchChords(currentTitle.value, { keepDrawerOpen: true })
+  }
+
+  async function onTransposeChords(semitones) {
+    if (!currentTitle.value) return
+    const fav = favorites.value.find(f => f.title === currentTitle.value)
+    if (fav) {
+      const newTranspose = (fav.transpose || 0) + semitones
+      fav.transpose = newTranspose
+      chordTranspose.value = newTranspose
+      if (fav.id) {
+        api.updateSong(fav.id, { transpose: newTranspose })
+      }
+    }
   }
 
   return {
@@ -116,11 +136,13 @@ export function useChords(favorites, currentTitle, isSaved) {
     chordSections,
     chordStructure,
     chordCapo,
+    chordTranspose,
     spotifyTrackId,
     showPlayer,
     hasCustomChords,
     fetchChords,
     onChordsEdited,
     onResetChords,
+    onTransposeChords,
   }
 }

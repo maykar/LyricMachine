@@ -54,7 +54,7 @@ LyricMachine helps musicians display song lyrics, chords, and Spotify playback d
 │   │   └── adjustDropdown.js# Smart dropdown/popup repositioning — keeps menus inside viewport
 │   ├── components/
 │   │   ├── TopBar.vue       # Header: font controls, edit, search, played, label, star, page indicator (lyrics page only)
-│   │   ├── LyricsDisplay.vue# Canvas-based lyrics renderer — Pretext arithmetic layout, binary-search font sizing (zero DOM reflows), multi-column, pagination, merge, collapse repeats, alt colors, separators, object-fit:contain scaling
+│   │   ├── LyricsDisplay.vue# DOM-based lyrics renderer — Pretext arithmetic layout, binary-search font sizing (zero DOM reflows), multi-column, pagination, merge, collapse repeats, alt colors, separators, rAF-driven resize + font lerp
 │   │   ├── LibraryOverlay.vue# Library page: search lrclib, favorites grid (3–4 cols), drag-and-drop reorder, context menu, filters, sort, new song form
 │   │   ├── Dashboard.vue    # Home page: album art mosaic, recently added, most played (dynamic height), label breakdown bar, context menu
 │   │   ├── KanbanView.vue   # Kanban board modal for song categorization with drag-and-drop, context menu, settings cog, confetti, party sound
@@ -77,6 +77,7 @@ LyricMachine helps musicians display song lyrics, chords, and Spotify playback d
 │       ├── useUGImport.js   # UG bookmarklet import polling (2s interval, 2min timeout)
 │       ├── usePlaylistSync.js# Spotify playlist sync with title normalization, lyrics auto-fetch from lrclib, album art backfill
 │       ├── useSpotifyAuth.js# Client-side Spotify connection state (connected/user/status) via api.js
+│       ├── useSpotifyEmbed.js# IFrame Embed API fallback — 30s preview playback for non-Premium users (warmUp/preload/play/pause/destroy)
 │       └── useToast.js      # Singleton toast notifications — showToast(message, {type, duration}), auto-dismiss
 ├── tests/
 │   ├── shared/              # normalize, titleParser
@@ -131,7 +132,7 @@ All state lives in `useNavigation.js`. Keyboard shortcuts in `useKeyboard.js`.
 - **Auto-generated token** — `API_TOKEN` created on first startup, persisted to `.env`
 - **Token bootstrap** — client fetches token via unauthenticated `GET /api/auth/token`
 - **CSRF origin check** — non-GET requests from foreign origins are rejected
-- **SKIP_AUTH endpoints** — `/api/spotify/callback`, `/api/auth/token`, `/api/import-raw`, `/api/bookmarklet`, `/api/bookmarklet.js` bypass auth (bookmarklet POSTs from external origin)
+- **SKIP_AUTH endpoints** — `/api/spotify/login`, `/api/spotify/callback`, `/api/auth/token`, `/api/import-raw`, `/api/bookmarklet`, `/api/bookmarklet.js` bypass auth (bookmarklet POSTs from external origin)
 - **Stale token retry** — api client retries once on 401 after clearing cached token (handles server restarts)
 
 ## Input Validation
@@ -182,6 +183,9 @@ All state lives in `useNavigation.js`. Keyboard shortcuts in `useKeyboard.js`.
 - **Add to source** — re-add songs to source playlist via context menu
 - **Podcast filtering** — non-track items skipped during sync
 - **Embedded player** — iframe player with auto-lookup track ID, track ID caching, interaction-guarded pause (only sends toggle if user clicked play)
+- **Web Playback SDK** — global player in App.vue for programmatic full-track playback (requires Premium + HTTPS)
+- **IFrame Embed fallback** — `useSpotifyEmbed.js` provides 30-second preview playback for non-Premium users via hidden IFrame API controller
+- **Dual playback strategy** — randomizer checks for SDK device ID; if present uses SDK (full track), otherwise falls back to IFrame embed (30s preview)
 
 ### API Client Architecture
 - **Centralized client** (`src/api.js`) — wraps every server endpoint; no direct `fetch()` calls in components
@@ -324,7 +328,15 @@ The prompt should include:
 
 - **Synchronous SQLite**: `node:sqlite`'s `DatabaseSync` blocks the event loop during queries. Consider `better-sqlite3` (async-capable) if scaling up.
 - **Mixed async/sync patterns**: Server code mixes `async/await` for network fetches with synchronous DB calls. This is intentional for simplicity but complicates future migration to async databases.
-- **Canvas lyrics rendering**: `LyricsDisplay.vue` renders to a `<canvas>` using `@chenglou/pretext` for synchronous arithmetic layout. Pretext is a small personal library with no maintenance guarantees — if it breaks, the font-sizing and line-wrap logic will need to be replaced with `ctx.measureText`-based alternatives.
+- **Pretext dependency**: `LyricsDisplay.vue` uses `@chenglou/pretext` for synchronous arithmetic text layout (line-wrapping + font sizing without DOM reflows). Pretext is a small personal library with no maintenance guarantees — if it breaks, the layout logic will need to be replaced with manual `measureText`-based alternatives.
+
+## ⚠️ MANDATORY — FILE EDITING RULES (PREVENT DATA LOSS)
+> **THESE RULES ARE NON-NEGOTIABLE. EXECUTING DESTRUCTIVE FUZZY MATCHES WILL RESULT IN IMMEDIATE TERMINATION.**
+1. **NEVER use `multi_replace_file_content` on files you haven't explicitly read.** You MUST use the `view_file` tool to read the exact current state of a file in the turn immediately preceding any replace action. Never rely on memory.
+2. **NEVER execute a block replacement spanning more than 20 lines.** If a refactor requires moving massive blocks of code, write small `.js` patch scripts via `write_to_file` and execute them locally, or ask the user to move the block manually.
+3. **CHECK `git status` FIRST.** Before making sweeping changes to ANY file, you must run `git status`. If the file has uncommitted changes, you MUST halt and ask the user for permission before touching it.
+4. **NO DESTRUCTIVE RECOVERY. ABSOLUTELY NO EXCEPTIONS.** Never run `git checkout`, `git reset`, or `git restore` on a modified file. If a tool call corrupts a file, immediately instruct the user to use IDE Undo (`Ctrl+Z`) and halt all actions. Using Git commands to recover from botching a replacement is strictly forbidden.
+5. **NO EXCESSIVE TESTING.** Do NOT run the test suite (`npm test`) automatically after minor changes (e.g. 1-2 line edits). Test runs block progress and cost tokens. Only run tests when explicitly asked, or after completing a large, highly complex feature block where verification is critical.
 
 ## ⚠️ MANDATORY — No Assumptions About App Use
 

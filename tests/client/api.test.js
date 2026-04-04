@@ -176,6 +176,7 @@ describe('api client', () => {
     it.each([
       ['getSongs', '/api/songs'],
       ['getSpotifyStatus', '/api/spotify/status'],
+      ['getSpotifyToken', '/api/spotify/token'],
       ['getFilters', '/api/settings/filters'],
       ['getPlaylistTracks', '/api/playlist-tracks'],
       ['getImportChords', '/api/import-chords'],
@@ -207,6 +208,14 @@ describe('api client', () => {
       expect(url).toBe('/api/songs/reorder')
       expect(opts.method).toBe('PUT')
       expect(JSON.parse(opts.body)).toEqual({ ids: [3, 1, 2] })
+    })
+
+    it('playSpotify sends PUT to /api/spotify/play with trackId and deviceId', async () => {
+      await api.playSpotify({ trackId: 'abc123', deviceId: 'dev456' })
+      const [url, opts] = getApiCall(fetch)
+      expect(url).toBe('/api/spotify/play')
+      expect(opts.method).toBe('PUT')
+      expect(JSON.parse(opts.body)).toEqual({ trackId: 'abc123', deviceId: 'dev456' })
     })
   })
 })

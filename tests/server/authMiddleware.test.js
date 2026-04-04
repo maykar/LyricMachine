@@ -55,6 +55,12 @@ describe('authMiddleware', () => {
     expect(next).toHaveBeenCalled()
   })
 
+  it('passes through /api/spotify/login', () => {
+    const next = vi.fn()
+    authMiddleware(mockReq({ url: '/api/spotify/login' }), mockRes(), next)
+    expect(next).toHaveBeenCalled()
+  })
+
   it('returns 401 when Authorization header is missing', () => {
     const next = vi.fn()
     const res = mockRes()

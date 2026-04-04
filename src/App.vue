@@ -35,7 +35,7 @@
       @save-defaults="saveDefaults"
       @apply-defaults-to-all="handleApplyDefaultsToAll"
       @reset-all-chords="handleClearAllChords"
-      @clear-played-status="clearAllPlayed"
+      @clear-played-status="clearPlayedStatus"
       @connect-spotify="connectSpotify"
       @disconnect-spotify="onDisconnectSpotify"
       @trigger-sync="onSpotifySync"
@@ -101,8 +101,10 @@
         :structure="chordStructure"
         :capo="chordCapo"
         :has-custom-chords="hasCustomChords"
+        :transpose="chordTranspose"
         @update:chords="onChordsEdited"
         @reset-chords="onResetChords"
+        @change-transpose="onTransposeChords"
       />
     </div>
 
@@ -145,6 +147,7 @@ import SongRandomizer from './components/SongRandomizer.vue'
 import KanbanView from './components/KanbanView.vue'
 import Dashboard from './components/Dashboard.vue'
 import ToastContainer from './components/ToastContainer.vue'
+import { useCustomLabelsStore } from './stores/customLabels.js'
 
 import { api } from './api.js'
 import { useToast } from './composables/useToast.js'
@@ -157,9 +160,12 @@ import { usePlaylistSync } from './composables/usePlaylistSync.js'
 import { useKeyboard } from './composables/useKeyboard.js'
 import { useNavigation } from './composables/useNavigation.js'
 import { useSpotifyAuth } from './composables/useSpotifyAuth.js'
+import { useSpotifySDK } from './composables/useSpotifySDK.js'
 
 // --- Error boundary ---
-const { showToast } = useToast()
+const { showToast, updateToast, dismissToast } = useToast()
+const customLabelsStore = useCustomLabelsStore()
+
 onErrorCaptured((err) => {
   console.error('Unhandled component error:', err)
   showToast(err.message || 'Something went wrong', { type: 'error' })
@@ -167,116 +173,7 @@ onErrorCaptured((err) => {
 })
 
 // --- Global Spotify SDK Setup ---
-// Initialize once at the application root so the player is ready long
-// before the user interacts with the Randomizer, ensuring activateElement()
-// captures the very first top-level click to satisfy browser autoplay.
-const _sp = window.__spotify || (window.__spotify = { player: null, deviceId: null, ready: false })
-
-if (!_sp._init) {
-  _sp._init = true
-  window.onSpotifyWebPlaybackSDKReady = () => {
-    const player = new window.Spotify.Player({
-      name: 'LyricMachine Web Player',
-      getOAuthToken: cb => {
-        // Fetch a fresh token every time the SDK needs one (server auto-refreshes)
-        api.getSpotifyToken()
-          .then(d => cb(d?.token || ''))
-          .catch(() => cb(''))
-      },
-      volume: 1.0
-    })
-
-    player.addListener('ready', ({ device_id }) => {
-      console.log('[Spotify SDK] Ready with Device ID', device_id)
-      _sp.deviceId = device_id
-      _sp.ready = true
-    })
-
-    player.addListener('not_ready', ({ device_id }) => {
-      console.log('[Spotify SDK] Device ID has gone offline', device_id)
-      _sp.ready = false
-      _sp.deviceId = null
-    })
-
-    player.addListener('initialization_error', ({ message }) => { console.error('[Spotify SDK] INIT_ERROR:', message) })
-    player.addListener('authentication_error', ({ message }) => { console.error('[Spotify SDK] AUTH_ERROR:', message) })
-    player.addListener('account_error', ({ message }) => { console.error('[Spotify SDK] ACCOUNT_ERROR:', message) })
-    player.addListener('playback_error', ({ message }) => { console.error('[Spotify SDK] PLAYBACK_ERROR:', message) })
-    player.addListener('autoplay_failed', () => {
-      console.warn('[Spotify SDK] AUTOPLAY_FAILED fired — calling resume() to force playback')
-      player.resume().then(() => {
-        console.log('[Spotify SDK] resume() after AUTOPLAY_FAILED — SUCCESS')
-        // Inspect actual state
-        player.getCurrentState().then(state => {
-          if (state) {
-            console.log('[Spotify SDK] STATE after resume:', {
-              paused: state.paused,
-              position: state.position,
-              duration: state.duration,
-              track: state.track_window?.current_track?.name,
-              artist: state.track_window?.current_track?.artists?.[0]?.name,
-            })
-          } else {
-            console.log('[Spotify SDK] STATE after resume: NULL (no active session)')
-          }
-        })
-        player.getVolume().then(vol => {
-          console.log('[Spotify SDK] VOLUME:', vol)
-        })
-      }).catch(err => console.error('[Spotify SDK] resume() after AUTOPLAY_FAILED — FAILED:', err))
-    })
-
-    player.connect().then(success => {
-      if (success) {
-        _sp.player = player
-        console.log('[Spotify SDK] player.connect() succeeded, _sp.player set')
-        
-        // Patch SDK iframes: add allow="autoplay; encrypted-media" so the
-        // cross-origin iframe from sdk.scdn.co can play DRM audio.
-        const patchIframes = () => {
-          document.querySelectorAll('iframe').forEach(iframe => {
-            if (iframe.src && iframe.src.includes('spotify') && !iframe.allow?.includes('autoplay')) {
-              iframe.allow = 'autoplay; encrypted-media'
-              console.log('[Spotify SDK] Patched iframe with autoplay permission:', iframe.src.substring(0, 80))
-            }
-          })
-        }
-        patchIframes()
-        // Also watch for iframes created later
-        const obs = new MutationObserver(patchIframes)
-        obs.observe(document.body, { childList: true, subtree: true })
-      } else {
-        console.error('[Spotify SDK] Failed to connect.')
-      }
-    })
-  }
-
-  // Global listener: unlocks autoplay via activateElement() on user gesture.
-  // Keeps listening until the player is ready AND the user interacts.
-  const unlockAutoplay = () => {
-    console.log('[Spotify SDK] unlockAutoplay fired, player?', !!_sp.player, 'activateElement?', typeof _sp.player?.activateElement)
-    if (_sp.player && typeof _sp.player.activateElement === 'function') {
-      _sp.player.activateElement()
-        .then(() => console.log('[Spotify SDK] activateElement() SUCCESS (global)'))
-        .catch(err => console.error('[Spotify SDK] activateElement() FAILED (global):', err))
-      // Remove listeners only after successful activation
-      window.removeEventListener('click', unlockAutoplay, { capture: true })
-      window.removeEventListener('touchend', unlockAutoplay, { capture: true })
-      window.removeEventListener('keydown', unlockAutoplay, { capture: true })
-    }
-  }
-  window.addEventListener('click', unlockAutoplay, { capture: true })
-  window.addEventListener('touchend', unlockAutoplay, { capture: true })
-  window.addEventListener('keydown', unlockAutoplay, { capture: true })
-
-  // Pre-inject the SDK script globally if it isn't already
-  if (!document.querySelector('script[src*="sdk.scdn.co/spotify-player"]')) {
-    const s = document.createElement('script')
-    s.src = 'https://sdk.scdn.co/spotify-player.js'
-    s.async = true
-    document.body.appendChild(s)
-  }
-}
+const { initSpotifySDK } = useSpotifySDK()
 
 
 // --- Composables ---
@@ -297,9 +194,9 @@ const {
 
 const {
   showChords, chordsLoading, chordsFound,
-  chordSections, chordStructure, chordCapo,
+  chordSections, chordStructure, chordCapo, chordTranspose,
   spotifyTrackId, showPlayer, hasCustomChords,
-  fetchChords, onChordsEdited, onResetChords,
+  fetchChords, onChordsEdited, onResetChords, onTransposeChords,
 } = useChords(favorites, currentTitle, isSaved)
 
 const { startUGImportPoll, stopUGImportPoll } = useUGImport(
@@ -392,9 +289,19 @@ useKeyboard({
 
 // --- Song selection ---
 
-function onSongSelect({ title, lyrics, fontAdjust: fa, merge, separators, altColors }) {
+async function onSongSelect(fav) {
+  const { title, fontAdjust: fa, merge, separators, altColors } = fav
   currentTitle.value = title
-  currentLyrics.value = lyrics
+  
+  if ((fav.hasLyrics || fav.hasChords) && typeof fav.lyrics === 'undefined') {
+    const fullSong = await api.getSong(fav.id)
+    if (fullSong) {
+      fav.lyrics = fullSong.lyrics
+      fav.customChords = fullSong.customChords
+    }
+  }
+  
+  currentLyrics.value = fav.lyrics || ''
   fontAdjust.value = fa || 0
   songMerge.value = merge !== undefined ? merge : userDefaults.value.merge
   songSeparators.value = separators !== undefined ? separators : userDefaults.value.separators
@@ -439,7 +346,7 @@ function handleClearAllChords() {
   clearAllChords(favorites, fetchChords, currentTitle)
 }
 
-async function clearAllPlayed() {
+async function clearPlayedStatus() {
   for (const fav of favorites.value) {
     fav.played = false
   }
@@ -479,16 +386,29 @@ watch(page, (newPage, oldPage) => {
 onMounted(async () => {
   await loadFavorites()
   loadUserDefaults()
+  customLabelsStore.load()
 
   // Check Spotify connection first to decide sync strategy
   await checkSpotifyStatus()
 
   if (spotifyConnected.value) {
     // Server-side sync handles source playlist + not-in-playlist tracking
+    const toastId = showToast('Syncing Spotify...', { type: 'info', duration: 0 })
     try {
-      await api.syncSpotify()
+      const result = await api.syncSpotify()
       await loadFavorites()
-    } catch {}
+      
+      const added = result?.added || 0
+      if (added > 0) {
+        updateToast(toastId, `Sync complete. Added ${added} tracks.`, 'success')
+      } else {
+        updateToast(toastId, 'Sync complete. No new tracks.', 'info')
+      }
+      setTimeout(() => dismissToast(toastId), 3000)
+    } catch {
+      updateToast(toastId, 'Spotify sync failed', 'error')
+      setTimeout(() => dismissToast(toastId), 3000)
+    }
   } else {
     // Fall back to client-side sync (uses client credentials, no user auth needed)
     await syncPlaylist()

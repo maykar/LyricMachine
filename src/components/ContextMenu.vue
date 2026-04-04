@@ -15,6 +15,17 @@
       <span class="ctx-dot" :style="{ background: opt.color }"></span>
       {{ opt.name }}
     </button>
+    <template v-if="customLabelsStore.labels.length > 0">
+      <div class="ctx-divider" style="margin-top: 0;"></div>
+      <button
+        v-for="cLabel in customLabelsStore.labels" :key="cLabel"
+        class="ctx-option"
+        @click="$emit('toggle-custom-label', cLabel)"
+      >
+        <MdiIcon :path="mdiCheck" :size="14" :style="{ opacity: fav?.customLabels?.includes(cLabel) ? 1 : 0 }" />
+        {{ cLabel }}
+      </button>
+    </template>
     <div class="ctx-divider"></div>
     <button class="ctx-option" @click="$emit('toggle-played')">
       <MdiIcon :path="mdiCheck" :size="14" /> Played{{ fav?.playCount ? ` (${fav.playCount})` : '' }}
@@ -43,6 +54,7 @@ import { ref, watch, nextTick } from 'vue'
 import MdiIcon from './MdiIcon.vue'
 import { mdiCheck, mdiPencil, mdiRefresh, mdiDelete, mdiPlaylistPlus } from '@mdi/js'
 import { LABEL_OPTIONS } from '../constants/labels.js'
+import { useCustomLabelsStore } from '../stores/customLabels.js'
 
 const props = defineProps({
   show: { type: Boolean, default: false },
@@ -51,8 +63,9 @@ const props = defineProps({
   fav: { type: Object, default: null },
 })
 
-defineEmits(['set-label', 'toggle-played', 'edit-count', 'clear-count', 'delete', 'add-to-source', 'close'])
+defineEmits(['set-label', 'toggle-custom-label', 'toggle-played', 'edit-count', 'clear-count', 'delete', 'add-to-source', 'close'])
 
+const customLabelsStore = useCustomLabelsStore()
 const menuRef = ref(null)
 
 watch([() => props.show, () => props.x, () => props.y], async ([visible]) => {

@@ -62,6 +62,17 @@
                 @keydown.enter="$event.target.blur()"
               />
             </label>
+            <label class="setting-row setting-row--input">
+              <span>Custom labels</span>
+              <input
+                type="text"
+                class="settings-text-input"
+                v-model="customLabelsInput"
+                placeholder="Drop D, High Energy"
+                @blur="saveCustomLabels"
+                @keydown.enter="$event.target.blur()"
+              />
+            </label>
           </div>
 
           <div class="settings-section">
@@ -150,6 +161,7 @@ import MdiIcon from './MdiIcon.vue'
 import { mdiClose, mdiSpotify } from '@mdi/js'
 import { api } from '../api.js'
 import { useFavorites } from '../composables/useFavorites.js'
+import { useCustomLabelsStore } from '../stores/customLabels.js'
 
 const props = defineProps({
   defaults: { type: Object, required: true },
@@ -178,6 +190,10 @@ const bandNameInput = ref('')
 
 // Mosaic genres
 const mosaicGenresInput = ref('')
+
+// Custom labels
+const customLabelsStore = useCustomLabelsStore()
+const customLabelsInput = ref('')
 
 // Spotify
 const userPlaylists = ref([])
@@ -260,6 +276,22 @@ async function saveMosaicGenres() {
   await api.setSettingRaw('mosaic_genres', genres)
 }
 
+// --- Custom Labels ---
+function loadCustomLabels() {
+  customLabelsInput.value = customLabelsStore.labels.join(', ')
+}
+
+async function saveCustomLabels() {
+  const currentLabels = customLabelsInput.value
+    .split(',')
+    .map(g => g.trim())
+    .filter(Boolean)
+  
+  const unique = Array.from(new Set(currentLabels))
+  customLabelsStore.labels = unique
+  await customLabelsStore.save()
+}
+
 // --- Spotify ---
 function connectSpotify() {
   emit('connect-spotify')
@@ -285,25 +317,45 @@ async function loadSourcePlaylist() {
 async function saveSourcePlaylist() {
   await api.setSetting('spotify_source_playlist', selectedPlaylist.value)
 }
+import { useToast } from '../composables/useToast.js'
+const { showToast, updateToast, dismissToast } = useToast()
 
 async function triggerSync() {
   syncing.value = true
   syncStatus.value = ''
+  
+  const toastId = showToast('Syncing Spotify...', { type: 'info', duration: 0 })
   try {
     const data = await api.syncSpotify()
-    syncStatus.value = data?.error ? `Error: ${data.error}` : 'Sync complete!'
+    
+    if (data?.error) {
+      syncStatus.value = `Error: ${data.error}`
+      updateToast(toastId, `Sync failed: ${data.error}`, 'error')
+    } else {
+      syncStatus.value = 'Sync complete!'
+      const added = data?.added || 0
+      if (added > 0) {
+        updateToast(toastId, `Sync complete. Added ${added} tracks.`, 'success')
+      } else {
+        updateToast(toastId, 'Sync complete. No new tracks.', 'info')
+      }
+    }
+    
     emit('trigger-sync')
   } catch (err) {
     syncStatus.value = 'Sync failed'
+    updateToast(toastId, 'Spotify sync failed', 'error')
   } finally {
     syncing.value = false
     setTimeout(() => { syncStatus.value = '' }, 4000)
+    setTimeout(() => dismissToast(toastId), 3000)
   }
 }
 
 onMounted(async () => {
   loadBandName()
   loadMosaicGenres()
+  loadCustomLabels()
   if (props.spotifyConnected) {
     loadUserPlaylists()
     loadSourcePlaylist()

@@ -91,7 +91,9 @@ function del(url) {
 
 export const api = {
   // Songs CRUD
+  getSongsSummary: () => get('/api/songs/summary'),
   getSongs: () => get('/api/songs'),
+  getSong: (id) => get(`/api/songs/${id}`),
   createSong: (data) => post('/api/songs', data),
   updateSong: (id, fields) => put(`/api/songs/${id}`, fields),
   deleteSong: (id) => del(`/api/songs/${id}`),

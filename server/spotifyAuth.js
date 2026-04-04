@@ -204,6 +204,8 @@ export function setupSpotifyAuthRoutes(server, { get, post, put, json, parseBody
  * Returns a valid Spotify user access token.
  * Auto-refreshes if expired. Returns null if not connected.
  */
+let activeRefreshPromise = null
+
 export async function getUserToken() {
   const tokens = decrypt(db.getSetting('spotify_tokens'))
   if (!tokens) return null
@@ -213,42 +215,50 @@ export async function getUserToken() {
     return tokens.access_token
   }
 
-  // Refresh
-  try {
-    const clientId = process.env.SPOTIFY_CLIENT_ID
-    const clientSecret = process.env.SPOTIFY_CLIENT_SECRET
+  // Prevent concurrent refresh floods
+  if (activeRefreshPromise) return activeRefreshPromise
 
-    const res = await fetch('https://accounts.spotify.com/api/token', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        Authorization: 'Basic ' + Buffer.from(`${clientId}:${clientSecret}`).toString('base64'),
-      },
-      body: new URLSearchParams({
-        grant_type: 'refresh_token',
-        refresh_token: tokens.refresh_token,
-      }),
-    })
+  activeRefreshPromise = (async () => {
+    try {
+      const clientId = process.env.SPOTIFY_CLIENT_ID
+      const clientSecret = process.env.SPOTIFY_CLIENT_SECRET
 
-    const data = await res.json()
+      const res = await fetch('https://accounts.spotify.com/api/token', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          Authorization: 'Basic ' + Buffer.from(`${clientId}:${clientSecret}`).toString('base64'),
+        },
+        body: new URLSearchParams({
+          grant_type: 'refresh_token',
+          refresh_token: tokens.refresh_token,
+        }),
+      })
 
-    if (!res.ok) {
-      console.error('Spotify token refresh failed:', data)
-      // Clear invalid tokens
-      db.setSetting('spotify_tokens', null)
-      db.setSetting('spotify_user', null)
+      const data = await res.json()
+
+      if (!res.ok) {
+        console.error('Spotify token refresh failed:', data)
+        // Clear invalid tokens
+        db.setSetting('spotify_tokens', null)
+        db.setSetting('spotify_user', null)
+        return null
+      }
+
+      const updated = {
+        access_token: data.access_token,
+        refresh_token: data.refresh_token || tokens.refresh_token,
+        expires_at: Date.now() + data.expires_in * 1000,
+      }
+      db.setSetting('spotify_tokens', encrypt(updated))
+      return updated.access_token
+    } catch (err) {
+      console.error('Spotify token refresh error:', err.message)
       return null
+    } finally {
+      activeRefreshPromise = null
     }
+  })()
 
-    const updated = {
-      access_token: data.access_token,
-      refresh_token: data.refresh_token || tokens.refresh_token,
-      expires_at: Date.now() + data.expires_in * 1000,
-    }
-    db.setSetting('spotify_tokens', encrypt(updated))
-    return updated.access_token
-  } catch (err) {
-    console.error('Spotify token refresh error:', err.message)
-    return null
-  }
+  return activeRefreshPromise
 }
