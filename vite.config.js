@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
+import basicSsl from '@vitejs/plugin-basic-ssl'
 import { dirname } from 'path'
 import { fileURLToPath } from 'url'
 
@@ -28,7 +29,7 @@ function chordApiPlugin() {
 }
 
 export default defineConfig({
-  plugins: [vue(), chordApiPlugin()],
+  plugins: [vue(), basicSsl(), chordApiPlugin()],
   server: {
     host: '127.0.0.1',
     port: 5555,

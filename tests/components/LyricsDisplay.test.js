@@ -20,14 +20,15 @@ function djb2(str) {
 
 // --- Extracted: computeGeometryPure (from computeGeometryPure) ---
 // Pure arithmetic — no DOM. Matches the constants in LyricsDisplay.vue exactly:
-// padding: 3rem H + 3rem V + 0.3125rem top extra; gap: 3rem (2-col) / 2rem (3-col).
+// padding: 3rem H + 3rem V + 0.3125rem top extra + 0.5rem bottom buffer; gap: 3rem (2-col) / 2rem (3-col).
 function computeGeometryPure(W, H, remPx, cols) {
   const paddingH = 3 * remPx
   const paddingV = 3 * remPx
   const paddingTopExtra = 0.3125 * remPx
+  const paddingBottomExtra = 0.5 * remPx
   const gap = cols === 3 ? 2 * remPx : 3 * remPx
   const colW = (W - 2 * paddingH - (cols - 1) * gap) / cols
-  const availH = H - 2 * paddingV - paddingTopExtra
+  const availH = H - 2 * paddingV - paddingTopExtra - paddingBottomExtra
   return { W, H, remPx, paddingH, paddingV, paddingTopExtra, gap, colW, availH }
 }
 
@@ -93,9 +94,9 @@ describe('computeGeometryPure', () => {
     expect(g.gap).toBe(2 * remPx)
   })
 
-  it('availH subtracts 2×paddingV + paddingTopExtra', () => {
+  it('availH subtracts 2×paddingV + paddingTopExtra + paddingBottomExtra', () => {
     const g = computeGeometryPure(W, H, remPx, 2)
-    const expectedAvailH = H - 2 * 3 * remPx - 0.3125 * remPx
+    const expectedAvailH = H - 2 * 3 * remPx - 0.3125 * remPx - 0.5 * remPx
     expect(g.availH).toBeCloseTo(expectedAvailH)
   })
 

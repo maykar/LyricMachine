@@ -2,7 +2,7 @@ import crypto from 'crypto'
 import * as db from './db.js'
 import { encrypt, decrypt } from './crypto.js'
 
-const SCOPES = 'playlist-modify-public playlist-modify-private playlist-read-private'
+const SCOPES = 'playlist-modify-public playlist-modify-private playlist-read-private user-modify-playback-state user-read-playback-state streaming user-read-email user-read-private'
 
 function getRedirectUri() {
   if (!process.env.SPOTIFY_REDIRECT_URI) {
@@ -11,9 +11,7 @@ function getRedirectUri() {
   return process.env.SPOTIFY_REDIRECT_URI
 }
 
-// --- Auth routes ---
-
-export function setupSpotifyAuthRoutes(server, { get, post, json }) {
+export function setupSpotifyAuthRoutes(server, { get, post, put, json, parseBody }) {
 
   // GET /api/spotify/login — redirect user to Spotify authorization
   get(server, '/api/spotify/login', (req, res) => {
@@ -122,12 +120,81 @@ export function setupSpotifyAuthRoutes(server, { get, post, json }) {
     }
   })
 
+  // GET /api/spotify/token — expose raw token for frontend Web Playback SDK
+  get(server, '/api/spotify/token', async (req, res) => {
+    try {
+      const token = await getUserToken()
+      if (!token) return json(res, { error: 'Not connected to Spotify' }, 401)
+      json(res, { token })
+    } catch (err) {
+      console.error('Spotify token fetch exception:', err.message)
+      json(res, { error: err.message }, 500)
+    }
+  })
+
   // POST /api/spotify/disconnect — clear tokens
   post(server, '/api/spotify/disconnect', (req, res) => {
     db.setSetting('spotify_tokens', null)
     db.setSetting('spotify_user', null)
     console.log('Spotify disconnected')
     json(res, { ok: true })
+  })
+
+  // PUT /api/spotify/play — transfer playback to SDK device, then play track
+  put(server, '/api/spotify/play', async (req, res) => {
+    try {
+      const token = await getUserToken()
+      if (!token) return json(res, { error: 'Not connected to Spotify' }, 401)
+      
+      const body = await parseBody(req)
+      const { trackId, deviceId } = body || {}
+      if (!trackId) return json(res, { error: 'trackId required' }, 400)
+
+      // Step 1: Transfer playback to the SDK device (makes it "active")
+      // This is required — without it the SDK receives track metadata but
+      // the audio pipeline is never connected.
+      if (deviceId) {
+        const transferRes = await fetch('https://api.spotify.com/v1/me/player', {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ device_ids: [deviceId], play: false })
+        })
+        if (!transferRes.ok) {
+          const errorText = await transferRes.text()
+          console.error('Spotify transfer error:', transferRes.status, errorText)
+          // Don't bail — try to play anyway
+        }
+      }
+
+      // Step 2: Play the specific track on the (now active) device
+      const url = new URL('https://api.spotify.com/v1/me/player/play')
+      if (deviceId) {
+        url.searchParams.append('device_id', deviceId)
+      }
+
+      const playRes = await fetch(url.toString(), {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ uris: [`spotify:track:${trackId}`] })
+      })
+
+      if (!playRes.ok) {
+        const errorText = await playRes.text()
+        console.error('Spotify play error:', playRes.status, errorText)
+        return json(res, { error: 'Failed to play track.', details: errorText }, playRes.status)
+      }
+
+      json(res, { ok: true })
+    } catch (err) {
+      console.error('Spotify play exception:', err.message)
+      json(res, { error: err.message }, 500)
+    }
   })
 }
 

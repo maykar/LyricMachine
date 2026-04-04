@@ -122,8 +122,8 @@ export function setupAPI(server) {
   setupBookmarkletRoutes(server, import.meta.dirname)
 
   // Spotify auth + playlist routes
-  setupSpotifyAuthRoutes(server, { get, post, json })
-  setupSpotifyPlaylistRoutes(server, { get, post, json })
+  setupSpotifyAuthRoutes(server, { get, post, put, json, parseBody })
+  setupSpotifyPlaylistRoutes(server, { get, post, json, parseBody })
 
   // ===== Songs CRUD =====
 

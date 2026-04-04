@@ -170,20 +170,9 @@ const cardWidth = computed(() => 12.5 * remPx.value)
 const cardGap = computed(() => 0.75 * remPx.value)
 const cardStep = computed(() => cardWidth.value + cardGap.value)
 const BUFFER_CARDS = 60
-/* Spotify state lives on window so it survives component unmount/remount */
-const _sp = window.__spotify || (window.__spotify = { api: null, ctrl: null, ready: false })
-
-if (!_sp._init) {
-  _sp._init = true
-  window.onSpotifyIframeApiReady = (IFrameAPI) => { _sp.api = IFrameAPI }
-  if (!document.querySelector('script[src*="spotify.com/embed/iframe-api"]')) {
-    const s = document.createElement('script')
-    s.src = 'https://open.spotify.com/embed/iframe-api/v1'
-    s.async = true
-    document.body.appendChild(s)
-  }
-}
 const spotifyId = ref(null)
+let spotifyPlayTimer = null
+let lastTickTimer = null
 
 const shuffled = ref([])
 
@@ -296,7 +285,6 @@ let animFrame = null
 let confettiInterval = null
 let lastCenterCardIdx = -1
 let audioCtx = null
-let spotifyPlayTriggered = false
 
 function getAudioCtx() {
   if (!audioCtx) {
@@ -313,7 +301,7 @@ function ensureAudioResumed() {
 
 function playTick() {
   const ctx = getAudioCtx()
-  if (ctx.state !== 'running') return
+  if (ctx.state === 'suspended') return  // truly dead, not just slow
   try {
     const osc = ctx.createOscillator()
     const gain = ctx.createGain()
@@ -367,6 +355,22 @@ function onSpinClick() {
   if (isSpinning.value) return
   preloadImpactSound()
 
+  // Resume the tick AudioContext synchronously in the click gesture
+  // so ticks play from the very first card crossing
+  const ctx = getAudioCtx()
+  if (ctx.state === 'suspended') ctx.resume()
+  
+  // Force-play every hidden media element the SDK created
+  document.querySelectorAll('video, audio').forEach(el => {
+    console.log('[Spin] Force-playing media element:', el.tagName, el.src?.substring(0, 60))
+    el.play().catch(() => {})
+  })
+  
+  // Also call activateElement as a fallback
+  if (window.__spotify?.player?.activateElement) {
+    window.__spotify.player.activateElement().catch(() => {})
+  }
+
   landed.value = false
   if (land._resizeHandler) {
     window.removeEventListener('resize', land._resizeHandler)
@@ -385,7 +389,13 @@ function onSpinClick() {
   }
   winnerRenderIndex.value = -1
   spotifyId.value = null
-  if (_sp.ctrl) { try { _sp.ctrl.pause() } catch {} }
+  if (spotifyPlayTimer) { clearTimeout(spotifyPlayTimer); spotifyPlayTimer = null }
+  if (lastTickTimer) { clearTimeout(lastTickTimer); lastTickTimer = null }
+
+  // Stop any currently playing Spotify track immediately on re-spin
+  const player = window.__spotify?.player
+  if (player) player.pause().catch(() => {})
+
   if (confettiInterval) { clearInterval(confettiInterval); confettiInterval = null }
   if (fireConfetti) { fireConfetti.reset() }
   reshuffleCards()
@@ -403,35 +413,63 @@ function onSpinClick() {
 
     isSpinning.value = true
 
-    lastCenterCardIdx = startIdx
+    lastCenterCardIdx = startIdx - 1  // offset by 1 so the first card crossing fires a tick
 
-    /* Preload Spotify: we already know which card will win */
+    /* Resolve Spotify track ID eagerly, but delay the actual play command
+     * to fire ~200ms before the carousel lands — the music drops right
+     * as the winner is revealed. */
     const RICKROLL_CHANCE = 0.02 // 2% easter egg, max once per month
     const rrKey = 'lyricmachine_rr'
     const rrMonth = new Date().getFullYear() + '-' + (new Date().getMonth() + 1)
     const lastRR = localStorage.getItem(rrKey)
     const isRickroll = lastRR !== rrMonth && Math.random() < RICKROLL_CHANCE
     const winnerCard = renderCards.value[targetIdx]
-    if (isRickroll && _sp.ctrl) {
-      spotifyId.value = '4cOdK2wGLETKBW3PvgPWqT'
-      preloadSpotifyTrack('4cOdK2wGLETKBW3PvgPWqT')
+
+    // Resolved track ID — set eagerly, played later
+    let resolvedTrackId = null
+
+    // Helper: actually fire playback on the SDK device
+    function triggerSpotifyPlay(trackId) {
+      if (!trackId || !window.__spotify?.deviceId) return
+      spotifyId.value = trackId
+      const player = window.__spotify.player
+      const targetUri = `spotify:track:${trackId}`
+      
+      api.playSpotify({ trackId, deviceId: window.__spotify.deviceId })
+        .then(r => {
+          console.log('[Spin] api.playSpotify response:', r)
+          if (!player) return
+          
+          const onStateChange = (state) => {
+            if (!state) return
+            const currentTrack = state.track_window?.current_track
+            if (currentTrack?.uri === targetUri) {
+              player.removeListener('player_state_changed', onStateChange)
+              player.resume().catch(() => {})
+            }
+          }
+          player.addListener('player_state_changed', onStateChange)
+          setTimeout(() => player.removeListener('player_state_changed', onStateChange), 10000)
+        })
+        .catch(e => console.error('[Spin] api.playSpotify FAILED:', e))
+    }
+
+    // Resolve track ID eagerly (cache lookup or API call)
+    if (isRickroll) {
+      resolvedTrackId = '4cOdK2wGLETKBW3PvgPWqT'
       localStorage.setItem(rrKey, rrMonth)
     } else if (winnerCard) {
       const { artist, track, title } = winnerCard
-      // Check if we already have a cached Spotify ID in favorites
       const cachedFav = props.favorites.find(f => f.title === title)
       if (cachedFav?.spotifyTrackId) {
-        spotifyId.value = cachedFav.spotifyTrackId
-        preloadSpotifyTrack(cachedFav.spotifyTrackId)
+        resolvedTrackId = cachedFav.spotifyTrackId
       } else if (artist && track) {
+        // Fire the lookup now so it's ready by play time
         api.getSpotifyId(artist, track)
           .then(d => {
             if (d?.spotifyTrackId) {
-              spotifyId.value = d.spotifyTrackId
-              preloadSpotifyTrack(d.spotifyTrackId)
-              // Cache to favorites
-              const favs = props.favorites
-              const f = favs.find(fv => fv.title === winnerCard.title)
+              resolvedTrackId = d.spotifyTrackId
+              const f = props.favorites.find(fv => fv.title === winnerCard.title)
               if (f) {
                 f.spotifyTrackId = d.spotifyTrackId
                 if (d.albumArt) f.albumArt = d.albumArt
@@ -445,10 +483,17 @@ function onSpinClick() {
     const startTime = performance.now()
     const duration = 3500 + Math.random() * 1500
     const startOffset = trackOffset.value
-    spotifyPlayTriggered = false
+
+    // Schedule playback ~200ms before the carousel lands
+    // Total animation = duration (ease) + 300ms (bounce-back)
+    const playDelay = duration + 100  // 300 - 200 = 100ms into bounce
+    spotifyPlayTimer = setTimeout(() => {
+      spotifyPlayTimer = null
+      if (resolvedTrackId) triggerSpotifyPlay(resolvedTrackId)
+    }, playDelay)
 
     // One last tick 250ms before landing
-    setTimeout(() => playTick(), duration - 100)
+    lastTickTimer = setTimeout(() => { lastTickTimer = null; playTick() }, duration - 100)
 
     function animate(now) {
       const elapsed = now - startTime
@@ -474,12 +519,6 @@ function onSpinClick() {
       }
 
       if (progress < 1) {
-        /* Start Spotify 0.5s before landing */
-        const remaining = duration - elapsed
-        if (!spotifyPlayTriggered && remaining <= 10 && _sp.ctrl && _sp.ready) {
-          spotifyPlayTriggered = true
-          _sp.ctrl.play()
-        }
         animFrame = requestAnimationFrame(animate)
       } else {
         // Phase 2: ease back from overshoot to center
@@ -578,11 +617,6 @@ function land() {
   holoFrame = requestAnimationFrame(updateHolo)
   land._holoFrame = holoFrame
 
-  /* Play Spotify only if the winner's track was actually preloaded */
-  if (!spotifyPlayTriggered && _sp.ctrl && _sp.ready && spotifyId.value) {
-    _sp.ctrl.play()
-  }
-
   if (!fireConfetti) return
 
   const goldColors = ['#f5c542', '#ffd700', '#ffec8b', '#fff8dc', '#ffffff']
@@ -609,96 +643,7 @@ function land() {
 
 }
 
-function warmUpSpotifyEmbed() {
-  if (_sp.ctrl) return  /* already warm */
 
-  /* Create hidden wrapper */
-  const old = document.getElementById('randomizer-spotify-wrap')
-  if (old) old.remove()
-
-  const wrapper = document.createElement('div')
-  wrapper.id = 'randomizer-spotify-wrap'
-  wrapper.style.cssText = 'position:fixed;bottom:16px;right:16px;z-index:9999;width:300px;border-radius:12px;overflow:hidden;visibility:hidden;'
-  document.body.appendChild(wrapper)
-
-  const el = document.createElement('div')
-  wrapper.appendChild(el)
-
-  function doWarmUp(IFrameAPI) {
-    /* Use a well-known track just to initialize the iframe — it won't play */
-    IFrameAPI.createController(el, {
-      uri: 'spotify:track:4cOdK2wGLETKBW3PvgPWqT',
-      width: 300,
-      height: 80,
-    }, (controller) => {
-      _sp.ctrl = controller
-      _sp.warm = true
-    })
-  }
-
-  if (_sp.api) {
-    doWarmUp(_sp.api)
-  } else {
-    window.onSpotifyIframeApiReady = (IFrameAPI) => {
-      _sp.api = IFrameAPI
-      doWarmUp(IFrameAPI)
-    }
-  }
-}
-
-function preloadSpotifyTrack(trackId) {
-  const uri = `spotify:track:${trackId}`
-  _sp.ready = false
-
-  if (_sp.ctrl) {
-    /* Controller is warm — just swap the track (never played, so no auto-play) */
-    _sp.ctrl.loadUri(uri)
-    _sp.ctrl.addListener('ready', () => {
-      _sp.ready = true
-      if (landed.value) {
-        _sp.ctrl.play()
-      }
-    })
-    return
-  }
-
-  /* Fallback: create from scratch if warm-up didn't finish */
-  const old = document.getElementById('randomizer-spotify-wrap')
-  if (old) old.remove()
-
-  const wrapper = document.createElement('div')
-  wrapper.id = 'randomizer-spotify-wrap'
-  wrapper.style.cssText = 'position:fixed;bottom:16px;right:16px;z-index:9999;width:300px;border-radius:12px;overflow:hidden;visibility:hidden;'
-  document.body.appendChild(wrapper)
-
-  const el = document.createElement('div')
-  wrapper.appendChild(el)
-
-  function createEmbed(IFrameAPI) {
-    IFrameAPI.createController(el, {
-      uri,
-      width: 300,
-      height: 80,
-    }, (controller) => {
-      _sp.ctrl = controller
-      controller.addListener('ready', () => {
-        _sp.ready = true
-        if (landed.value) {
-          controller.play()
-        }
-      })
-    })
-  }
-
-  if (_sp.api) {
-    createEmbed(_sp.api)
-  } else {
-    window.onSpotifyIframeApiReady = (IFrameAPI) => {
-      _sp.api = IFrameAPI
-      createEmbed(IFrameAPI)
-    }
-  }
-}
 
 const backdropDown = ref(false)
 function onBackdropUp() {
@@ -813,8 +758,10 @@ onMounted(() => {
   readRem()
   reshuffleCards()
 
-  // Warm up Spotify embed so it's ready by spin time
-  warmUpSpotifyEmbed()
+  // Pre-warm AudioContext immediately — the randomizer is always opened
+  // by a user gesture (R key or click) so resume() is allowed here.
+  const ctx = getAudioCtx()
+  if (ctx.state === 'suspended') ctx.resume()
 
   // Create confetti instance bound to our canvas
   if (confettiCanvas.value) {
@@ -832,15 +779,14 @@ onUnmounted(() => {
   if (animFrame) cancelAnimationFrame(animFrame)
   if (confettiInterval) clearInterval(confettiInterval)
   if (fireConfetti) fireConfetti.reset()
-  /* Fully destroy spotify to ensure clean warm-up on next open */
-  if (_sp.ctrl) {
-    try { _sp.ctrl.destroy() } catch {}
-    _sp.ctrl = null
+  if (spotifyPlayTimer) { clearTimeout(spotifyPlayTimer); spotifyPlayTimer = null }
+  if (lastTickTimer) { clearTimeout(lastTickTimer); lastTickTimer = null }
+
+  // Stop Spotify playback when the randomizer modal closes
+  const player = window.__spotify?.player
+  if (player) {
+    player.pause().catch(() => {})
   }
-  _sp.ready = false
-  _sp.warm = false
-  const wrap = document.getElementById('randomizer-spotify-wrap')
-  if (wrap) wrap.remove()
 })
 </script>
 

@@ -45,6 +45,7 @@ export function getApiToken() {
 
 // Paths that skip auth (OAuth callback must be unauthenticated)
 const SKIP_AUTH = new Set([
+  '/api/spotify/login',
   '/api/spotify/callback',
   '/api/auth/token',
   '/api/import-raw',       // Bookmarklet POSTs from external origin (no token)
