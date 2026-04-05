@@ -10,6 +10,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 // Mock spotifyAuth before importing utils
 vi.mock('../../server/spotifyAuth.js', () => ({
   getUserToken: vi.fn(() => 'mock-token'),
+  forceRefreshToken: vi.fn(() => 'refreshed-token'),
 }))
 
 const { spotifyFetch, pickAlbumArt } = await import('../../server/utils.js')
@@ -38,6 +39,7 @@ describe('pickAlbumArt', () => {
 describe('spotifyFetch', () => {
   beforeEach(() => {
     vi.restoreAllMocks()
+    vi.clearAllMocks()
   })
 
   it('returns response on success', async () => {
@@ -90,5 +92,38 @@ describe('spotifyFetch', () => {
     await expect(
       spotifyFetch('https://api.spotify.com/test')
     ).rejects.toThrow('Spotify not connected')
+  })
+
+  it('retries once on 401 and succeeds with refreshed token', async () => {
+    const { forceRefreshToken } = await import('../../server/spotifyAuth.js')
+    const response401 = { status: 401 }
+    const responseOk = { ok: true, status: 200 }
+
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(response401)
+      .mockResolvedValueOnce(responseOk)
+
+    const res = await spotifyFetch('https://api.spotify.com/test')
+    expect(res).toBe(responseOk)
+    expect(fetch).toHaveBeenCalledTimes(2)
+    expect(forceRefreshToken).toHaveBeenCalledOnce()
+    // Second call uses the refreshed token
+    const [, secondOpts] = fetch.mock.calls[1]
+    expect(secondOpts.headers.Authorization).toBe('Bearer refreshed-token')
+  })
+
+  it('does not retry a second 401 (returns response, no infinite loop)', async () => {
+    const { forceRefreshToken } = await import('../../server/spotifyAuth.js')
+    const response401 = { status: 401 }
+
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(response401)
+
+    // Second 401 is returned as-is (caller decides how to handle it)
+    const res = await spotifyFetch('https://api.spotify.com/test', {}, { maxRetries: 3 })
+    expect(res).toBe(response401)
+    // fetch called twice: once before refresh, once after
+    expect(fetch).toHaveBeenCalledTimes(2)
+    // forceRefreshToken called exactly once — no retry loop
+    expect(forceRefreshToken).toHaveBeenCalledOnce()
   })
 })

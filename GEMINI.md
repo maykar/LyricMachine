@@ -27,8 +27,8 @@ LyricMachine helps musicians display song lyrics, chords, and Spotify playback d
 │   └── normalize.js         # Title normalization (shared between client + server)
 ├── server/
 │   ├── api.js               # Route registry + .env loader + parseBody helper (10MB limit)
-│   ├── db.js                # SQLite database (songs, settings tables) — column-name assertion on writes
-│   ├── utils.js             # spotifyFetch with retry + throw-on-exhaustion, re-exports shared/normalize
+│   ├── db.js                # SQLite database (songs, settings tables) — SCHEMA-driven column mapping, column-name assertion on writes
+│   ├── utils.js             # spotifyFetch with 429 + 401 retry + throw-on-exhaustion, re-exports shared/normalize
 │   ├── spotify.js           # Spotify client-credentials search + playlist sync
 │   ├── spotifyAuth.js       # Spotify Authorization Code flow (login, callback, token refresh)
 │   ├── spotifyPlaylists.js  # Source playlist sync engine + mutex guard + parallel lyrics fetch
@@ -69,16 +69,23 @@ LyricMachine helps musicians display song lyrics, chords, and Spotify playback d
 │   │   ├── StarButton.vue   # Star/unsave toggle
 │   │   └── MdiIcon.vue      # SVG icon wrapper (rem-scaled)
 │   └── composables/
-│       ├── useNavigation.js # Unified navigation: 3 pages (dashboard/library/lyrics) + modal stack (settings/kanban/randomizer)
+│       ├── useNavigation.js # Thin wrapper → navigationStore (Pinia)
 │       ├── useKeyboard.js   # Global keyboard shortcuts — Escape calls dismissTop(), shortcuts blocked when modal open
-│       ├── useFavorites.js  # Singleton store: favorites CRUD via api.js, per-song settings, label management, play tracking
-│       ├── useSettings.js   # User defaults persistence via api.js, apply-to-all, clear-all-chords
-│       ├── useChords.js     # Chord fetching from saved data, Spotify track ID lookup + cache, chord editing + reset
+│       ├── useFavorites.js  # Thin wrapper → favoritesStore (Pinia)
+│       ├── useSettings.js   # Thin wrapper → settingsStore (Pinia)
+│       ├── useChords.js     # Thin wrapper → chordsStore (Pinia)
 │       ├── useUGImport.js   # UG bookmarklet import polling (2s interval, 2min timeout)
 │       ├── usePlaylistSync.js# Spotify playlist sync with title normalization, lyrics auto-fetch from lrclib, album art backfill
-│       ├── useSpotifyAuth.js# Client-side Spotify connection state (connected/user/status) via api.js
+│       ├── useSpotifyAuth.js# Thin wrapper → spotifyAuthStore (Pinia)
 │       ├── useSpotifyEmbed.js# IFrame Embed API fallback — 30s preview playback for non-Premium users (warmUp/preload/play/pause/destroy)
-│       └── useToast.js      # Singleton toast notifications — showToast(message, {type, duration}), auto-dismiss
+│       └── useToast.js      # Thin wrapper → toastStore (Pinia)
+├── src/stores/              # Pinia stores (global reactive state)
+│   ├── toast.js             # Toast queue + showToast/dismissToast actions
+│   ├── favorites.js         # Core app state: favorites[], currentTitle, CRUD, label/played management
+│   ├── navigation.js        # page ref, modalStack, goToPage/pushModal/dismissTop
+│   ├── settings.js          # userDefaults, applyDefaultsToAll, clearAllChords
+│   ├── spotifyAuth.js       # spotifyConnected, spotifyUser, checkSpotifyStatus
+│   └── chords.js            # showChords, chordSections, fetchChords, transpose
 ├── tests/
 │   ├── shared/              # normalize, titleParser
 │   ├── server/              # db assertions, spotifyFetch, parseBody, chordParser, crypto, authMiddleware
