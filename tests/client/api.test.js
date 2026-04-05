@@ -1,15 +1,15 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
-// Mock useToast before importing api.js
-vi.mock('../../src/composables/useToast.js', () => {
+// Mock the Pinia toast store before importing api.js
+vi.mock('../../src/stores/toast.js', () => {
   const showToast = vi.fn()
   return {
-    useToast: () => ({ showToast, toasts: { value: [] }, dismissToast: vi.fn() }),
+    useToastStore: () => ({ showToast, toasts: { value: [] }, dismissToast: vi.fn() }),
   }
 })
 
 const { api } = await import('../../src/api.js')
-const { useToast } = await import('../../src/composables/useToast.js')
+const { useToastStore } = await import('../../src/stores/toast.js')
 
 // Helper: create a mock fetch that handles token bootstrap + API calls
 function mockFetch(apiResponse) {
@@ -37,7 +37,7 @@ describe('api client', () => {
   let showToast
 
   beforeEach(() => {
-    showToast = useToast().showToast
+    showToast = useToastStore().showToast
     showToast.mockClear()
     vi.spyOn(console, 'error').mockImplementation(() => {})
   })
@@ -148,7 +148,7 @@ describe('api client', () => {
         expect.stringContaining('error'),
         'Network failed'
       )
-      expect(showToast).toHaveBeenCalledWith(expect.stringContaining('Network error'))
+      expect(showToast).toHaveBeenCalledWith(expect.stringContaining('Network error'), undefined)
     })
 
     it('toast message strips /api/ prefix', async () => {
@@ -160,7 +160,7 @@ describe('api client', () => {
       })
 
       await api.getSetting('defaults')
-      expect(showToast).toHaveBeenCalledWith(expect.stringContaining('settings/defaults'))
+      expect(showToast).toHaveBeenCalledWith(expect.stringContaining('settings/defaults'), undefined)
     })
   })
 

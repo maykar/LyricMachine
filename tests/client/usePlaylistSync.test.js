@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { ref } from 'vue'
+import { createPinia, setActivePinia } from 'pinia'
 
 /**
  * Tests for usePlaylistSync composable.
@@ -26,6 +27,7 @@ describe('usePlaylistSync', () => {
   let sync, favorites, userDefaults
 
   beforeEach(() => {
+    setActivePinia(createPinia())
     favorites = ref([])
     userDefaults = ref({ merge: false, separators: false, altColors: true })
     sync = usePlaylistSync(favorites, userDefaults)

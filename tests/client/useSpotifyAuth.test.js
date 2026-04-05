@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { createPinia, setActivePinia } from 'pinia'
 
 /**
- * Tests for useSpotifyAuth composable.
+ * Tests for useSpotifyAuth composable (Pinia-backed).
  */
 
 vi.mock('../../src/api.js', () => ({
@@ -18,6 +19,7 @@ describe('useSpotifyAuth', () => {
   let auth
 
   beforeEach(() => {
+    setActivePinia(createPinia())
     auth = useSpotifyAuth()
     vi.clearAllMocks()
   })

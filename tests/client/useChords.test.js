@@ -1,8 +1,11 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { ref } from 'vue'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { createPinia, setActivePinia } from 'pinia'
 
 /**
- * Tests for useChords composable.
+ * Tests for useChords (Pinia-backed).
+ *
+ * The store now imports favoritesStore internally instead of
+ * receiving favorites/currentTitle/isSaved as constructor args.
  */
 
 vi.mock('../../src/api.js', () => ({
@@ -14,15 +17,19 @@ vi.mock('../../src/api.js', () => ({
 
 const { api } = await import('../../src/api.js')
 const { useChords } = await import('../../src/composables/useChords.js')
+const { useFavorites } = await import('../../src/composables/useFavorites.js')
 
 describe('useChords', () => {
-  let chords, favorites, currentTitle, isSaved
+  let chords, fav
 
   beforeEach(() => {
-    favorites = ref([])
-    currentTitle = ref('')
-    isSaved = ref(false)
-    chords = useChords(favorites, currentTitle, isSaved)
+    setActivePinia(createPinia())
+    fav = useFavorites()
+    chords = useChords()
+    // Clear state
+    fav.favorites.value = []
+    fav.currentTitle.value = ''
+    fav.isSaved.value = false
     vi.clearAllMocks()
     vi.spyOn(globalThis, 'fetch').mockResolvedValue({
       ok: true,
@@ -54,14 +61,14 @@ describe('useChords', () => {
     })
 
     it('returns false when song has no custom chords', () => {
-      favorites.value = [{ title: 'Artist — Song' }]
-      currentTitle.value = 'Artist — Song'
+      fav.favorites.value = [{ title: 'Artist — Song' }]
+      fav.currentTitle.value = 'Artist — Song'
       expect(chords.hasCustomChords.value).toBe(false)
     })
 
     it('returns true when song has custom chords', () => {
-      favorites.value = [{ title: 'Artist — Song', customChords: [{ section: 'VERSE', chords: 'Am C' }] }]
-      currentTitle.value = 'Artist — Song'
+      fav.favorites.value = [{ title: 'Artist — Song', customChords: [{ section: 'VERSE', chords: 'Am C' }] }]
+      fav.currentTitle.value = 'Artist — Song'
       expect(chords.hasCustomChords.value).toBe(true)
     })
   })
@@ -78,7 +85,7 @@ describe('useChords', () => {
     })
 
     it('loads saved chords from favorite', async () => {
-      favorites.value = [{
+      fav.favorites.value = [{
         title: 'Foo — Bar',
         customChords: [{ section: 'VERSE', chords: 'Am C' }],
         customStructure: 'VERSE',
@@ -95,7 +102,7 @@ describe('useChords', () => {
     })
 
     it('sets chordsFound false when no saved chords', async () => {
-      favorites.value = [{ title: 'Foo — Bar' }]
+      fav.favorites.value = [{ title: 'Foo — Bar' }]
 
       await chords.fetchChords('Foo — Bar')
       expect(chords.chordsFound.value).toBe(false)
@@ -103,7 +110,7 @@ describe('useChords', () => {
     })
 
     it('fetches Spotify ID when favorite has no track ID', async () => {
-      favorites.value = [{
+      fav.favorites.value = [{
         title: 'Foo — Bar',
         customChords: [{ section: 'VERSE', chords: 'Am C' }],
       }]
@@ -124,12 +131,12 @@ describe('useChords', () => {
     })
 
     it('saves to favorite and API when current song exists', async () => {
-      favorites.value = [{ id: 5, title: 'Foo — Bar' }]
-      currentTitle.value = 'Foo — Bar'
+      fav.favorites.value = [{ id: 5, title: 'Foo — Bar' }]
+      fav.currentTitle.value = 'Foo — Bar'
       const sections = [{ section: 'VERSE', chords: 'Am' }]
 
       await chords.onChordsEdited({ sections, structure: 'VERSE' })
-      expect(favorites.value[0].customChords).toEqual(sections)
+      expect(fav.favorites.value[0].customChords).toEqual(sections)
       expect(api.updateSong).toHaveBeenCalledWith(5, { customChords: sections, customStructure: 'VERSE' })
     })
 
@@ -141,23 +148,23 @@ describe('useChords', () => {
 
   describe('onResetChords', () => {
     it('does nothing when no current title', async () => {
-      currentTitle.value = ''
+      fav.currentTitle.value = ''
       await chords.onResetChords()
       expect(api.updateSong).not.toHaveBeenCalled()
     })
 
     it('clears chords from favorite and API', async () => {
-      favorites.value = [{
+      fav.favorites.value = [{
         id: 7,
         title: 'Foo — Bar',
         customChords: [{ section: 'VERSE', chords: 'Am' }],
         customStructure: 'VERSE',
       }]
-      currentTitle.value = 'Foo — Bar'
+      fav.currentTitle.value = 'Foo — Bar'
 
       await chords.onResetChords()
-      expect(favorites.value[0].customChords).toBeUndefined()
-      expect(favorites.value[0].customStructure).toBeUndefined()
+      expect(fav.favorites.value[0].customChords).toBeUndefined()
+      expect(fav.favorites.value[0].customStructure).toBeUndefined()
       expect(api.updateSong).toHaveBeenCalledWith(7, { customChords: null, customStructure: '', transpose: 0 })
     })
   })

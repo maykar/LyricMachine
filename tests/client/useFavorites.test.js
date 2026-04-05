@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { createPinia, setActivePinia } from 'pinia'
 
 // Mock api.js to isolate useFavorites logic
 vi.mock('../../src/api.js', () => ({
@@ -20,6 +21,7 @@ describe('useFavorites', () => {
   let fav
 
   beforeEach(() => {
+    setActivePinia(createPinia())
     fav = useFavorites()
     // Clear state between tests
     fav.favorites.value = []
@@ -31,9 +33,9 @@ describe('useFavorites', () => {
   it('returns singleton state', () => {
     const a = useFavorites()
     const b = useFavorites()
-    expect(a.favorites).toBe(b.favorites)
-    expect(a.currentTitle).toBe(b.currentTitle)
-    expect(a.isSaved).toBe(b.isSaved)
+    // Both wrappers should point to the same underlying state
+    a.currentTitle.value = 'Test'
+    expect(b.currentTitle.value).toBe('Test')
   })
 
   describe('loadFavorites', () => {

@@ -1,10 +1,8 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, beforeEach } from 'vitest'
+import { createPinia, setActivePinia } from 'pinia'
 
 /**
- * Tests for useNavigation composable.
- *
- * Since it uses module-level refs (singleton state),
- * we test the functions directly.
+ * Tests for useNavigation composable (Pinia-backed).
  */
 
 const { useNavigation } = await import('../../src/composables/useNavigation.js')
@@ -13,17 +11,18 @@ describe('useNavigation', () => {
   let nav
 
   beforeEach(() => {
+    setActivePinia(createPinia())
     nav = useNavigation()
-    nav.page.value = 'dashboard'
-    nav.modalStack.value = []
   })
 
   describe('singleton', () => {
     it('returns the same refs across calls', () => {
       const a = useNavigation()
       const b = useNavigation()
-      expect(a.page).toBe(b.page)
-      expect(a.modalStack).toBe(b.modalStack)
+      a.goToPage('library')
+      expect(b.page.value).toBe('library')
+      a.pushModal('settings')
+      expect(b.modalStack.value).toEqual(['settings'])
     })
   })
 

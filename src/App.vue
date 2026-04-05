@@ -197,7 +197,7 @@ const {
   chordSections, chordStructure, chordCapo, chordTranspose,
   spotifyTrackId, showPlayer, hasCustomChords,
   fetchChords, onChordsEdited, onResetChords, onTransposeChords,
-} = useChords(favorites, currentTitle, isSaved)
+} = useChords()
 
 const { startUGImportPoll, stopUGImportPoll } = useUGImport(
   favorites, currentTitle,
@@ -339,11 +339,11 @@ function cancelEditMode() {
 
 // --- Settings wrappers ---
 function handleApplyDefaultsToAll() {
-  applyDefaultsToAll(favorites)
+  applyDefaultsToAll()
 }
 
 function handleClearAllChords() {
-  clearAllChords(favorites, fetchChords, currentTitle)
+  clearAllChords()
 }
 
 async function clearPlayedStatus() {

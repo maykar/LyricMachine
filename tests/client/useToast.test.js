@@ -1,10 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { createPinia, setActivePinia } from 'pinia'
 import { useToast } from '../../src/composables/useToast.js'
 
 describe('useToast', () => {
   let toasts, showToast, dismissToast
 
   beforeEach(() => {
+    setActivePinia(createPinia())
     vi.useFakeTimers()
     const result = useToast()
     toasts = result.toasts
@@ -17,7 +19,9 @@ describe('useToast', () => {
   it('returns singleton refs', () => {
     const a = useToast()
     const b = useToast()
-    expect(a.toasts).toBe(b.toasts)
+    // Both wrappers should point to the same underlying array
+    a.showToast('test')
+    expect(b.toasts.value).toHaveLength(1)
   })
 
   it('adds a toast with default type and auto-dismiss', () => {

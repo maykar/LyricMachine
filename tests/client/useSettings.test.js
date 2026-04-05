@@ -1,5 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { ref } from 'vue'
+import { createPinia, setActivePinia } from 'pinia'
+
+/**
+ * Tests for useSettings (Pinia-backed).
+ *
+ * applyDefaultsToAll() and clearAllChords() no longer take args —
+ * they import favoritesStore and chordsStore internally.
+ */
 
 // Mock api.js
 vi.mock('../../src/api.js', () => ({
@@ -8,17 +15,23 @@ vi.mock('../../src/api.js', () => ({
     setSettingRaw: vi.fn(),
     bulkUpdate: vi.fn(),
     clearChords: vi.fn(),
+    updateSong: vi.fn(),
+    getSpotifyId: vi.fn().mockResolvedValue({}),
   },
 }))
 
 const { api } = await import('../../src/api.js')
 const { useSettings } = await import('../../src/composables/useSettings.js')
+const { useFavorites } = await import('../../src/composables/useFavorites.js')
 
 describe('useSettings', () => {
-  let settings
+  let settings, fav
 
   beforeEach(() => {
+    setActivePinia(createPinia())
     settings = useSettings()
+    fav = useFavorites()
+    fav.favorites.value = []
     vi.clearAllMocks()
   })
 
@@ -60,13 +73,13 @@ describe('useSettings', () => {
   describe('applyDefaultsToAll', () => {
     it('calls bulkUpdate for each setting and updates local favs', async () => {
       api.bulkUpdate.mockResolvedValue({})
-      const favorites = ref([
+      fav.favorites.value = [
         { id: 1, altColors: false, separators: false, merge: false },
         { id: 2, altColors: false, separators: false, merge: false },
-      ])
+      ]
       settings.userDefaults.value = { altColors: true, separators: true, merge: true }
 
-      await settings.applyDefaultsToAll(favorites)
+      await settings.applyDefaultsToAll()
 
       expect(api.bulkUpdate).toHaveBeenCalledTimes(3)
       expect(api.bulkUpdate).toHaveBeenCalledWith('altColors', true)
@@ -74,14 +87,13 @@ describe('useSettings', () => {
       expect(api.bulkUpdate).toHaveBeenCalledWith('merge', true)
 
       // Local favs updated
-      expect(favorites.value[0].altColors).toBe(true)
-      expect(favorites.value[1].merge).toBe(true)
+      expect(fav.favorites.value[0].altColors).toBe(true)
+      expect(fav.favorites.value[1].merge).toBe(true)
     })
 
     it('shows no-favorites message when empty', async () => {
       vi.useFakeTimers()
-      const favorites = ref([])
-      await settings.applyDefaultsToAll(favorites)
+      await settings.applyDefaultsToAll()
       expect(settings.applyStatus.value).toBe('No favorites to update')
       vi.useRealTimers()
     })
@@ -90,18 +102,15 @@ describe('useSettings', () => {
   describe('clearAllChords', () => {
     it('calls api.clearChords and cleans local state', async () => {
       api.clearChords.mockResolvedValue({})
-      const favorites = ref([
+      fav.favorites.value = [
         { id: 1, customChords: [{ section: 'VERSE', chords: 'Am C' }] },
         { id: 2 },
-      ])
-      const fetchChords = vi.fn()
-      const currentTitle = ref('Song A')
+      ]
 
-      await settings.clearAllChords(favorites, fetchChords, currentTitle)
+      await settings.clearAllChords()
 
       expect(api.clearChords).toHaveBeenCalled()
-      expect(favorites.value[0].customChords).toBeUndefined()
-      expect(fetchChords).toHaveBeenCalledWith('Song A', { keepDrawerOpen: true })
+      expect(fav.favorites.value[0].customChords).toBeUndefined()
     })
   })
 })

@@ -16,6 +16,12 @@ vi.mock('@vueuse/core', () => ({
   },
 }))
 
+vi.mock('../../src/api.js', () => ({
+  api: {
+    openUG: vi.fn(),
+  },
+}))
+
 const { useKeyboard } = await import('../../src/composables/useKeyboard.js')
 
 function makeEvent(key, overrides = {}) {

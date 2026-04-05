@@ -5,9 +5,14 @@
  * On failure: logs to console.error AND fires a toast notification.
  * Returns parsed JSON on success, or null on failure.
  */
-import { useToast } from './composables/useToast.js'
+import { useToastStore } from './stores/toast.js'
 
-const { showToast } = useToast()
+// Lazy — resolved on first use, after Pinia is installed in main.js
+let _toastStore = null
+function showToast(msg, opts) {
+  if (!_toastStore) _toastStore = useToastStore()
+  _toastStore.showToast(msg, opts)
+}
 
 // --- API token management ---
 let _apiToken = null

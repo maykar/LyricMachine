@@ -1,36 +1,18 @@
-import { ref } from 'vue'
-import { api } from '../api.js'
+import { storeToRefs } from 'pinia'
+import { useSpotifyAuthStore } from '../stores/spotifyAuth.js'
 
+/**
+ * Thin wrapper around the Pinia spotifyAuth store.
+ * Preserves the original composable API so consumers don't need to change.
+ */
 export function useSpotifyAuth() {
-  const spotifyConnected = ref(false)
-  const spotifyUser = ref('')
-
-  async function checkSpotifyStatus() {
-    const data = await api.getSpotifyStatus()
-    if (data) {
-      spotifyConnected.value = data.connected
-      spotifyUser.value = data.displayName || ''
-    } else {
-      spotifyConnected.value = false
-      spotifyUser.value = ''
-    }
-  }
-
-  function connectSpotify() {
-    window.location.href = '/api/spotify/login'
-  }
-
-  async function disconnectSpotify() {
-    await api.disconnectSpotify()
-    spotifyConnected.value = false
-    spotifyUser.value = ''
-  }
-
+  const store = useSpotifyAuthStore()
+  const { spotifyConnected, spotifyUser } = storeToRefs(store)
   return {
     spotifyConnected,
     spotifyUser,
-    checkSpotifyStatus,
-    connectSpotify,
-    disconnectSpotify,
+    checkSpotifyStatus: store.checkSpotifyStatus,
+    connectSpotify: store.connectSpotify,
+    disconnectSpotify: store.disconnectSpotify,
   }
 }
