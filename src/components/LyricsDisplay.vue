@@ -64,6 +64,8 @@ let rafId = null
 let lastW = 0
 let lastH = 0
 let displayFontSize = -1 // lerped toward fontSize.value each frame; -1 = snap next frame
+let resizePending = false // set by ResizeObserver, consumed by next rAF tick
+let resizeObserver = null
 
 // ─── Geometry ─────────────────────────────────────────────────────────────────
 function getRemPx() {
@@ -387,34 +389,41 @@ function draw() {
   }
 }
 
-// ─── rAF loop — runs continuously; lerps displayFontSize for smooth animation ─
+// ─── rAF loop — runs only while animating or after a resize ──────────────────
 function rafLoop() {
+  rafId = null  // cleared first so startRaf() can re-arm
   const wrapper = wrapperRef.value
-  if (wrapper && props.lyrics) {
-    const w = wrapper.clientWidth
-    const h = wrapper.clientHeight
-    const dimsChanged = w !== lastW || h !== lastH
-    if (dimsChanged) {
-      lastW = w
-      lastH = h
-      calculate()
-    }
+  if (!wrapper || !props.lyrics) return
 
-    // Snap on first frame after song load; otherwise lerp toward target
-    const target = fontSize.value
-    if (displayFontSize < 0) {
-      displayFontSize = target
-    }
-    const diff = target - displayFontSize
-    if (Math.abs(diff) > 0.05) {
-      displayFontSize += diff * 0.2
-      draw()
-    } else if (dimsChanged || displayFontSize !== target) {
-      displayFontSize = target
-      draw()
-    }
+  if (resizePending) {
+    resizePending = false
+    calculate()
   }
-  rafId = requestAnimationFrame(rafLoop)
+
+  // Snap on first frame after song load; otherwise lerp toward target
+  const target = fontSize.value
+  if (displayFontSize < 0) displayFontSize = target
+
+  const diff = target - displayFontSize
+  const settling = Math.abs(diff) > 0.05
+
+  if (settling) {
+    displayFontSize += diff * 0.2
+    draw()
+    // Still animating — keep loop alive
+    rafId = requestAnimationFrame(rafLoop)
+  } else {
+    if (displayFontSize !== target) {
+      displayFontSize = target
+      draw()
+    }
+    // Lerp settled — loop stops; ResizeObserver or next state change will restart it
+  }
+}
+
+/** Start the rAF loop if it's not already running */
+function startRaf() {
+  if (!rafId) rafId = requestAnimationFrame(rafLoop)
 }
 
 // recheckPages() removed — font adjustments now force a full recalculate so
@@ -431,6 +440,7 @@ function resetToDefaults() {
   displayFontSize = -1 // snap to new auto font
   fontCache.clear()
   lastW = 0; lastH = 0
+  startRaf()
 }
 
 function onKeydown(e) {
@@ -452,18 +462,19 @@ function onKeydown(e) {
     e.preventDefault()
     manualAdjust.value++
     emit('adjust-changed', manualAdjust.value)
-    // Clear cache so calculate() re-evaluates columns + pages for the new size
     fontCache.clear()
-    displayFontSize = fontSize.value + 1 // optimistic snap so lerp starts from right place
+    displayFontSize = fontSize.value + 1
     lastW = 0; lastH = 0
+    startRaf()
   } else if (e.key === '-' || e.key === '_') {
     e.preventDefault()
     if (fontSize.value > 8) {
       manualAdjust.value--
       emit('adjust-changed', manualAdjust.value)
       fontCache.clear()
-      displayFontSize = fontSize.value - 1 // optimistic snap
+      displayFontSize = fontSize.value - 1
       lastW = 0; lastH = 0
+      startRaf()
     }
   } else if (e.key === 'm' || e.key === 'M') {
     e.preventDefault()
@@ -471,6 +482,7 @@ function onKeydown(e) {
     emit('merge-changed', mergeMode.value)
     fontCache.clear()
     lastW = 0; lastH = 0
+    startRaf()
   } else if (e.key === 'l' || e.key === 'L') {
     e.preventDefault()
     showSeparators.value = !showSeparators.value
@@ -490,16 +502,16 @@ watch(() => props.lyrics, () => {
   mergeMode.value = props.initialMerge || false
   showSeparators.value = props.initialSeparators || false
   showAltColors.value = props.initialAltColors !== false
-  displayFontSize = -1 // snap to new song's size without animating
-  lastW = 0; lastH = 0 // force rafLoop to recalculate next frame
-  // Evict stale caches from previous song
+  displayFontSize = -1
+  lastW = 0; lastH = 0
   prepareCache.clear()
   segmentsCache.clear()
+  startRaf()
 })
 
 watch(() => props.initialMerge, (val) => {
   mergeMode.value = val || false
-  if (props.lyrics) { lastW = 0; lastH = 0 }
+  if (props.lyrics) { lastW = 0; lastH = 0; startRaf() }
 })
 
 watch(() => props.initialSeparators, (val) => {
@@ -517,15 +529,30 @@ useEventListener(window, 'keydown', onKeydown)
 
 onMounted(() => {
   refreshTheme()
+  // ResizeObserver fires only on actual size changes (replaces per-frame clientWidth polling)
+  resizeObserver = new ResizeObserver(() => {
+    const wrapper = wrapperRef.value
+    if (!wrapper || !props.lyrics) return
+    const w = wrapper.clientWidth
+    const h = wrapper.clientHeight
+    if (w === lastW && h === lastH) return
+    lastW = w
+    lastH = h
+    resizePending = true
+    startRaf()
+  })
   // Wait for Inter font before first layout so measurements are accurate
   document.fonts.ready.then(() => {
-    rafId = requestAnimationFrame(rafLoop)
+    if (wrapperRef.value) resizeObserver.observe(wrapperRef.value)
+    startRaf()
   })
 })
 
 onUnmounted(() => {
   if (rafId) cancelAnimationFrame(rafId)
   rafId = null
+  resizeObserver?.disconnect()
+  resizeObserver = null
   linePool.forEach(el => el.remove())
   linePool = []
 })
@@ -536,8 +563,9 @@ function adjustFont(delta) {
     manualAdjust.value += delta
     emit('adjust-changed', manualAdjust.value)
     fontCache.clear()
-    displayFontSize = fontSize.value + delta // optimistic snap for lerp start
+    displayFontSize = fontSize.value + delta
     lastW = 0; lastH = 0
+    startRaf()
   }
 }
 
@@ -545,8 +573,9 @@ function resetFont() {
   manualAdjust.value = 0
   emit('adjust-changed', 0)
   fontCache.clear()
-  displayFontSize = -1 // snap after recalculate
+  displayFontSize = -1
   lastW = 0; lastH = 0
+  startRaf()
 }
 
 defineExpose({
@@ -558,7 +587,8 @@ defineExpose({
   triggerResize: () => {
     fontCache.clear()
     segmentsCache.clear()
-    lastW = 0; lastH = 0 // rafLoop recalculates next frame
+    lastW = 0; lastH = 0
+    startRaf()
   },
 })
 </script>

@@ -1,4 +1,4 @@
-import { getUserToken } from './spotifyAuth.js'
+import { getUserToken, forceRefreshToken } from './spotifyAuth.js'
 // Single source of truth — shared between server and client
 export { normalize } from '../shared/normalize.js'
 import { normalize } from '../shared/normalize.js'
@@ -26,7 +26,7 @@ export function pickAlbumArt(images) {
  * @param {number} [config.maxRetries=3] - max 429 retries
  */
 export async function spotifyFetch(url, opts = {}, { token: preToken, maxRetries = 3 } = {}) {
-  const token = preToken || await getUserToken()
+  let token = preToken || await getUserToken()
   if (!token) throw new Error('Spotify not connected')
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
@@ -39,6 +39,14 @@ export async function spotifyFetch(url, opts = {}, { token: preToken, maxRetries
       const retryAfter = parseInt(res.headers.get('retry-after') || '2', 10)
       console.warn(`Spotify 429 — retrying in ${retryAfter}s (attempt ${attempt + 1}/${maxRetries})`)
       await new Promise(r => setTimeout(r, retryAfter * 1000))
+      continue
+    }
+
+    // 401: token invalidated externally mid-batch — force a refresh and retry once
+    if (res.status === 401 && attempt === 0) {
+      console.warn('Spotify 401 — forcing token refresh and retrying once')
+      token = await forceRefreshToken()
+      if (!token) throw new Error('Spotify token refresh failed — not connected')
       continue
     }
 

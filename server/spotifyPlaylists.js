@@ -108,7 +108,8 @@ async function runFullSync() {
 // --- Source playlist sync ---
 
 async function syncSourcePlaylist(playlistId) {
-  const songs = db.getAllSongs()
+  // Lightweight fetch: only id/title/spotifyTrackId/notInPlaylist needed for diff
+  const songs = db.getAllSongTitlesAndTrackIds()
 
   // Fetch all tracks from source playlist
   const playlistTracks = await getPlaylistTracks(playlistId)

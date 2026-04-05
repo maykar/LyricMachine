@@ -106,16 +106,27 @@ function runMigrations() {
       const raw = readFileSync(join(migrationsDir, file), 'utf8')
       const sql = raw.replace(/--.*$/gm, '').trim()
       if (sql) {
-        // Execute each statement separately (ALTER TABLE doesn't support multi-statement)
+        // Execute each statement separately (ALTER TABLE doesn't support multi-statement).
+        // Only swallow "already exists" / "duplicate column" errors — those are expected
+        // from IF NOT EXISTS guards. Any other error is a real migration failure; rethrow
+        // so schema_version is NOT advanced and the migration can be retried on next start.
         for (const stmt of sql.split(';').map(s => s.trim()).filter(Boolean)) {
-          try { db.exec(stmt) } catch { /* IF NOT EXISTS / IF EXISTS guards handle duplicates */ }
+          try {
+            db.exec(stmt)
+          } catch (stmtErr) {
+            const msg = stmtErr.message || ''
+            const isBenign = /already exists|duplicate column/i.test(msg)
+            if (!isBenign) throw stmtErr
+          }
         }
       }
-      // Update schema version
+      // Only update schema version if every statement succeeded (or was benign)
       db.exec(`INSERT INTO settings (key, value) VALUES ('schema_version', '${num}') ON CONFLICT(key) DO UPDATE SET value = '${num}'`)
       console.log(`Migration ${file} complete`)
     } catch (err) {
-      console.error(`Migration ${file} failed:`, err.message)
+      console.error(`Migration ${file} FAILED — schema_version NOT advanced:`, err.message)
+      // Stop here: subsequent migrations may depend on this one succeeding
+      break
     }
   }
 }
@@ -153,102 +164,95 @@ const stmts = {
   `),
 }
 
+// --- Single schema declaration — one source of truth for all field mappings ---
+//
+// type: 'str' | 'int' | 'bool' | 'json'
+// default: value returned when DB column is NULL (undefined = field omitted from summary)
+// summaryOnly: if true, field only appears in rowToSongSummary (computed, not a real column)
+
+const SCHEMA = [
+  { key: 'title',           col: 'title',             type: 'str'  },
+  { key: 'lyrics',          col: 'lyrics',             type: 'str',  default: '' },
+  { key: 'fontAdjust',      col: 'font_adjust',        type: 'int',  default: 0 },
+  { key: 'merge',           col: 'merge',              type: 'bool', default: false },
+  { key: 'separators',      col: 'separators',         type: 'bool', default: false },
+  { key: 'altColors',       col: 'alt_colors',         type: 'bool', default: true },
+  { key: 'label',           col: 'label',              type: 'str',  default: 'fresh' },
+  { key: 'played',          col: 'played',             type: 'bool', default: false },
+  { key: 'playCount',       col: 'play_count',         type: 'int',  default: 0 },
+  { key: 'customChords',    col: 'custom_chords',      type: 'json' },
+  { key: 'customStructure', col: 'custom_structure',   type: 'str',  default: '' },
+  { key: 'spotifyTrackId',  col: 'spotify_track_id',   type: 'str' },
+  { key: 'albumArt',        col: 'album_art',          type: 'str' },
+  { key: 'capo',            col: 'capo',               type: 'int' },
+  { key: 'transpose',       col: 'transpose',          type: 'int',  default: 0 },
+  { key: 'customLabels',    col: 'custom_labels',      type: 'json', default: [] },
+  { key: 'notInPlaylist',   col: 'not_in_playlist',    type: 'bool', default: false },
+  { key: 'sortOrder',       col: 'sort_order',         type: 'int',  default: 0 },
+]
+
+// Derived lookups — computed once from SCHEMA
+const FIELD_MAP = Object.fromEntries(SCHEMA.map(f => [f.key, f.col]))
+const BOOL_FIELDS = new Set(SCHEMA.filter(f => f.type === 'bool').map(f => f.col))
+const JSON_FIELDS = new Set(SCHEMA.filter(f => f.type === 'json').map(f => f.col))
+
 // --- Helpers: convert between DB rows (snake_case) and client objects (camelCase) ---
 
-/** DB row → client-friendly object */
-function rowToSong(row) {
-  if (!row) return null
-  return {
-    id: row.id,
-    title: row.title,
-    lyrics: row.lyrics,
-    fontAdjust: row.font_adjust,
-    merge: !!row.merge,
-    separators: !!row.separators,
-    altColors: !!row.alt_colors,
-    label: row.label,
-    played: !!row.played,
-    playCount: row.play_count,
-    customChords: row.custom_chords ? JSON.parse(row.custom_chords) : undefined,
-    customStructure: row.custom_structure || '',
-    spotifyTrackId: row.spotify_track_id,
-    albumArt: row.album_art,
-    capo: row.capo,
-    transpose: row.transpose || 0,
-    customLabels: row.custom_labels ? JSON.parse(row.custom_labels) : [],
-    notInPlaylist: !!row.not_in_playlist,
-    sortOrder: row.sort_order,
-    hasLyrics: !!row.lyrics,
-    hasChords: !!row.custom_chords && row.custom_chords !== '[]'
+/** Decode a single DB column value based on its schema type */
+function decodeCol(field, colValue) {
+  if (field.type === 'bool')  return !!colValue
+  if (field.type === 'json') {
+    if (colValue == null || colValue === '') return field.default ?? undefined
+    try { return JSON.parse(colValue) } catch { return field.default ?? undefined }
   }
+  if (colValue == null) return field.default ?? undefined
+  if (field.type === 'int')   return colValue
+  return colValue  // str
 }
 
-/** DB row (from summarySongs) → client-friendly object */
+/** Encode a client-side value for DB storage */
+function encodeCol(field, value) {
+  if (field.type === 'bool') return value ? 1 : 0
+  if (field.type === 'json') return value != null ? JSON.stringify(value) : null
+  return value ?? null
+}
+
+/** DB row → full client-friendly object (includes lyrics + raw hasLyrics/hasChords) */
+function rowToSong(row) {
+  if (!row) return null
+  const obj = { id: row.id }
+  for (const field of SCHEMA) {
+    obj[field.key] = decodeCol(field, row[field.col])
+  }
+  obj.hasLyrics = !!(row.lyrics)
+  obj.hasChords = !!(row.custom_chords) && row.custom_chords !== '[]'
+  return obj
+}
+
+/** DB row (from summarySongs) → client-friendly object (no lyrics, has computed has_* cols) */
 function rowToSongSummary(row) {
   if (!row) return null
-  return {
-    id: row.id,
-    title: row.title,
-    fontAdjust: row.font_adjust,
-    merge: !!row.merge,
-    separators: !!row.separators,
-    altColors: !!row.alt_colors,
-    label: row.label,
-    played: !!row.played,
-    playCount: row.play_count,
-    customStructure: row.custom_structure || '',
-    spotifyTrackId: row.spotify_track_id,
-    albumArt: row.album_art,
-    capo: row.capo,
-    transpose: row.transpose || 0,
-    customLabels: row.custom_labels ? JSON.parse(row.custom_labels) : [],
-    notInPlaylist: !!row.not_in_playlist,
-    sortOrder: row.sort_order,
-    hasLyrics: !!row.has_lyrics,
-    hasChords: !!row.has_chords
+  const obj = { id: row.id }
+  for (const field of SCHEMA) {
+    if (field.key === 'lyrics') continue  // not fetched in summary query
+    obj[field.key] = decodeCol(field, row[field.col])
   }
+  obj.hasLyrics = !!row.has_lyrics
+  obj.hasChords = !!row.has_chords
+  return obj
 }
 
 /** Client object → DB params (for INSERT) */
 function songToParams(song, sortOrder = 0) {
-  return {
-    title: song.title,
-    lyrics: song.lyrics || '',
-    font_adjust: song.fontAdjust || 0,
-    merge: song.merge ? 1 : 0,
-    separators: song.separators ? 1 : 0,
-    alt_colors: song.altColors ? 1 : 0,
-    label: song.label || 'fresh',
-    played: song.played ? 1 : 0,
-    play_count: song.playCount || 0,
-    custom_chords: song.customChords ? JSON.stringify(song.customChords) : null,
-    custom_structure: song.customStructure || '',
-    spotify_track_id: song.spotifyTrackId || null,
-    album_art: song.albumArt || null,
-    capo: song.capo ?? null,
-    transpose: song.transpose || 0,
-    custom_labels: JSON.stringify(song.customLabels || []),
-    not_in_playlist: song.notInPlaylist ? 1 : 0,
-    sort_order: sortOrder,
+  const params = {}
+  for (const field of SCHEMA) {
+    if (field.key === 'title' || field.key === 'sortOrder') continue  // handled separately
+    params[field.col] = encodeCol(field, song[field.key])
   }
+  params.title = song.title
+  params.sort_order = sortOrder
+  return params
 }
-
-// camelCase field → snake_case column mapping
-const FIELD_MAP = {
-  title: 'title', lyrics: 'lyrics', fontAdjust: 'font_adjust',
-  merge: 'merge', separators: 'separators', altColors: 'alt_colors',
-  label: 'label', played: 'played', playCount: 'play_count',
-  customChords: 'custom_chords', customStructure: 'custom_structure',
-  spotifyTrackId: 'spotify_track_id', albumArt: 'album_art',
-  capo: 'capo', transpose: 'transpose', customLabels: 'custom_labels',
-  notInPlaylist: 'not_in_playlist', sortOrder: 'sort_order',
-}
-
-// Fields that are booleans in client but INTEGER 0/1 in DB
-const BOOL_FIELDS = new Set(['merge', 'separators', 'alt_colors', 'played', 'not_in_playlist'])
-
-// Fields that are JSON in client but TEXT in DB
-const JSON_FIELDS = new Set(['custom_chords', 'custom_labels'])
 
 // --- Public API ---
 
@@ -270,6 +274,16 @@ export function getSongByTitle(title) {
 
 export function getSongCount() {
   return stmts.songCount.get().count
+}
+
+/** Lightweight fetch for sync lookups — only columns needed to match against a playlist. */
+export function getAllSongTitlesAndTrackIds() {
+  return db.prepare('SELECT id, title, spotify_track_id, not_in_playlist FROM songs').all().map(row => ({
+    id: row.id,
+    title: row.title,
+    spotifyTrackId: row.spotify_track_id,
+    notInPlaylist: !!row.not_in_playlist,
+  }))
 }
 
 export function createSong(song) {

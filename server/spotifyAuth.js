@@ -262,3 +262,16 @@ export async function getUserToken() {
 
   return activeRefreshPromise
 }
+
+/**
+ * Force an immediate token refresh regardless of expiry.
+ * Used by spotifyFetch when it receives a 401 mid-batch.
+ * Stamps expires_at = 0 so getUserToken()'s expiry check always triggers a refresh.
+ */
+export async function forceRefreshToken() {
+  const tokens = decrypt(db.getSetting('spotify_tokens'))
+  if (!tokens) return null
+  // Mark as expired so getUserToken() will refresh
+  db.setSetting('spotify_tokens', encrypt({ ...tokens, expires_at: 0 }))
+  return getUserToken()
+}

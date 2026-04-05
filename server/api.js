@@ -127,12 +127,10 @@ export function setupAPI(server) {
 
   // ===== Songs CRUD =====
 
-  // GET /api/songs/summary (lazy load lyrics)
   get(server, '/api/songs/summary', (req, res, next) => {
-    // Need to strictly match /api/songs/summary, not /api/songs/summary/...
-    if (req.url !== '/' && req.url !== '' && !req.url.startsWith('?')) {
-      return next()
-    }
+    // Strictly match /api/songs/summary with no extra path segments after it
+    const clean = req.url.split('?')[0].replace(/\/+$/, '')
+    if (clean !== '' && clean !== '/') return next()
     try {
       json(res, db.getSongsSummary())
     } catch (err) {
@@ -251,14 +249,17 @@ export function setupAPI(server) {
   // ===== Settings =====
 
   get(server, '/api/settings', (req, res) => {
-    const key = req.url.split('/').pop()
+    // req.url is the path relative to the /api/settings mount point, e.g. '/defaults'
+    const key = new URL(req.url, 'http://localhost').pathname.replace(/^\/+/, '').replace(/\/+$/, '')
+    if (!key) return json(res, { error: 'settings key required' }, 400)
     const value = db.getSetting(key)
     json(res, value !== null ? value : {})
   })
 
   put(server, '/api/settings', async (req, res) => {
     try {
-      const key = req.url.split('/').pop()
+      const key = new URL(req.url, 'http://localhost').pathname.replace(/^\/+/, '').replace(/\/+$/, '')
+      if (!key) return json(res, { error: 'settings key required' }, 400)
       const body = await parseBody(req)
       db.setSetting(key, body)
       json(res, { ok: true })

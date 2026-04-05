@@ -266,63 +266,18 @@ When adding new features, add tests in the appropriate `tests/` subdirectory.
 - **NEVER** write code that can delete all rows from a production table. If bulk deletion is needed, require explicit confirmation or a safety flag.
 - **ALWAYS** consider what happens if your code runs against a database with real user data.
 
-## ⚠️ MANDATORY — Code Review After Significant Work
-
-> **THIS RULE IS NON-NEGOTIABLE. EVERY AGENT MUST FOLLOW IT.**
-
-**After completing significant work, you MUST run a Gemini CLI code review BEFORE notifying the user.** This is NOT optional. Do NOT notify the user until the review is done and findings are addressed.
-
-Follow `.agent/workflows/code-review.md` for the full process. The short version:
-1. Generate a diff: `git diff HEAD | Out-File -Encoding utf8 'C:\Users\theme\AppData\Local\Temp\review-diff.txt'`
-2. Write the review prompt to temp file (include the diff content)
-3. Delete stale output, run Gemini CLI via `cmd /c gemini.cmd` (NOT the `.ps1` shim), read the output file
-4. Address findings, then notify the user
-
 ## Code Review via Gemini CLI
 
-Gemini CLI is installed globally and authenticated with the user's Google AI Ultra account. Use it for code review with **full codebase context** by running it via `run_command`.
+Gemini CLI is available for on-demand code review. Use `/code-review` to trigger it.
 
-### Generating diffs
-
-Save diffs **inside the project** so the CLI can access it via `@`:
+Run via `cmd /c gemini.cmd` (NOT the `.ps1` shim). Save the diff inside the project so the CLI can access it via `@`:
 
 ```powershell
 git diff HEAD | Out-File -Encoding utf8 '.agent\review-diff.txt'
 ```
 
-### Running the review
-
-1. Write a **short** review prompt to a temp file. Reference the diff with `@.agent/review-diff.txt` — **do NOT embed the diff content inline**. Embedding overflows the OS command-line length limit.
-2. Run Gemini CLI via `cmd /c gemini.cmd` with `WaitMsBeforeAsync: 90000`:
-
-```powershell
-cmd /c "cd /d c:\Users\theme\Desktop\LyricMachine && gemini.cmd -m flash -p ""$(Get-Content -Raw 'C:\Users\theme\AppData\Local\Temp\review-prompt.txt')"""
-```
-
-> ⚠️ **CRITICAL**: Do NOT use `gemini` (the `.ps1` shim) — crashes with `StandardOutputEncoding` errors. Always use `cmd /c gemini.cmd`.
-
-> ⚠️ **CRITICAL**: Do NOT embed the diff in the prompt. Use `@.agent/review-diff.txt`.
-
-> ⚠️ **CRITICAL**: Do NOT redirect output to a file (`> output.txt`). Read the review from the terminal buffer via `command_status` with `OutputCharacterCount: 10000`. File redirection causes output to go missing.
-
-3. If the command goes to background, retrieve output with `command_status` (`OutputCharacterCount: 10000`, `WaitDurationSeconds: 120`).
-4. Present the review to the user.
-
-The prompt should include:
-- `@.` reference for full codebase context
-- `@.agent/review-diff.txt` reference for the diff
-- Any extra focus areas from the user
-
-### When to use
-
-- **After completing significant work** — see mandatory rule above
 - User says `/code-review` → follow `.agent/workflows/code-review.md`
-- User asks for a "code review", "review my changes", "review the codebase", etc.
-
-### Model selection
-
-- `flash` — default, fast reviews
-- `gemini-3.1-pro` — thorough reviews when the user requests it
+- `flash` — default; `gemini-3.1-pro` for thorough reviews
 
 ## Known Limitations
 
