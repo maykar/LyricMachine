@@ -49,17 +49,17 @@ describe('useSettings', () => {
       api.getSetting.mockResolvedValue(null)
 
       await settings.loadUserDefaults()
-      expect(settings.userDefaults.value).toEqual({ altColors: true, separators: false, merge: false, mergeAggressive: false, collapseChorus: false })
+      expect(settings.userDefaults.value).toEqual({ altColors: true, separators: false, merge: false, mergeAggressive: false, collapseChorus: false, karaokeSyncEnabled: true, karaokeSmoothEnabled: false, teleprompterHighlightEnabled: true })
     })
   })
 
   describe('saveDefaults', () => {
     it('calls api.setSettingRaw with current defaults', async () => {
       api.setSettingRaw.mockResolvedValue(null)
-      settings.userDefaults.value = { altColors: false, separators: true, merge: true, mergeAggressive: true, collapseChorus: false }
+      settings.userDefaults.value = { altColors: false, separators: true, merge: true, mergeAggressive: true, collapseChorus: false, karaokeSyncEnabled: true, karaokeSmoothEnabled: false, teleprompterHighlightEnabled: true }
 
       await settings.saveDefaults()
-      expect(api.setSettingRaw).toHaveBeenCalledWith('defaults', { altColors: false, separators: true, merge: true, mergeAggressive: true, collapseChorus: false })
+      expect(api.setSettingRaw).toHaveBeenCalledWith('defaults', { altColors: false, separators: true, merge: true, mergeAggressive: true, collapseChorus: false, karaokeSyncEnabled: true, karaokeSmoothEnabled: false, teleprompterHighlightEnabled: true })
     })
   })
 

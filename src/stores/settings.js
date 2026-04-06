@@ -11,7 +11,7 @@ import { useChordsStore } from './chords.js'
  * Now a Pinia store with proper singleton guarantees.
  */
 export const useSettingsStore = defineStore('settings', () => {
-  const userDefaults = ref({ altColors: true, separators: false, merge: false, mergeAggressive: false, collapseChorus: false })
+  const userDefaults = ref({ altColors: true, separators: false, merge: false, mergeAggressive: false, collapseChorus: false, karaokeSyncEnabled: true, karaokeSmoothEnabled: false, teleprompterHighlightEnabled: true })
   const applyStatus = ref('')
   const resetChordStatus = ref('')
 

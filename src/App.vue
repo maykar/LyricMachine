@@ -12,8 +12,11 @@
       :current-play-count="currentPlayCount"
       :total-pages="lyricsRef?.totalPages || 1"
       :current-page="lyricsRef?.currentPage || 1"
-      @adjust-font="(d) => lyricsRef?.adjustFont(d)"
-      @reset-font="() => lyricsRef?.resetFont()"
+      :lyric-view="lyricView"
+      :has-synced-lyrics="hasSyncedLyrics"
+      :active-spotify-track-id="activeSpotifyTrackId"
+      @adjust-font="(d) => lyricView === 'karaoke' ? karaokeRef?.adjustFontSize(d) : lyricsRef?.adjustFont(d)"
+      @reset-font="() => lyricView === 'karaoke' ? karaokeRef?.resetFont() : lyricsRef?.resetFont()"
       @save-edit="exitEditMode"
       @cancel-edit="cancelEditMode"
       @enter-edit="enterEditMode"
@@ -22,6 +25,7 @@
       @toggle-star="toggleStar"
       @set-label="onSetLabel"
       @toggle-played="togglePlayed"
+      @view-mode-changed="onViewModeChanged"
       :song-merge="songMerge"
       :song-merge-aggressive="songMergeAggressive"
       :song-collapse-chorus="songCollapseChorus"
@@ -63,7 +67,7 @@
       ></textarea>
 
       <LyricsDisplay
-        v-else-if="page === 'lyrics'"
+        v-else-if="page === 'lyrics' && lyricView !== 'karaoke'"
         ref="lyricsRef"
         :lyrics="currentLyrics"
         :initial-adjust="fontAdjust"
@@ -79,6 +83,15 @@
         @collapse-chorus-changed="onCollapseChorusChanged"
         @separators-changed="onSeparatorsChanged"
         @alt-colors-changed="onAltColorsChanged"
+      />
+
+      <KaraokeDisplay
+        v-else-if="page === 'lyrics' && lyricView === 'karaoke'"
+        ref="karaokeRef"
+        :synced-lyrics="currentSyncedLyrics"
+        :spotify-track-id="activeSpotifyTrackId"
+        :initial-adjust="fontAdjust"
+        @adjust-changed="onAdjustChanged"
       />
 
       <LibraryOverlay
@@ -126,7 +139,7 @@
     <SpotifyPlayer
       ref="spotifyPlayerRef"
       :visible="showPlayer && page === 'lyrics'"
-      :spotify-track-id="spotifyTrackId"
+      :spotify-track-id="activeSpotifyTrackId"
     />
 
     <!-- Modals: float on top of any page -->
@@ -150,8 +163,9 @@
 </template>
 
 <script setup>
-import { ref, watch, onMounted, onUnmounted, onErrorCaptured, nextTick } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted, onErrorCaptured, nextTick } from 'vue'
 import LyricsDisplay from './components/LyricsDisplay.vue'
+import KaraokeDisplay from './components/KaraokeDisplay.vue'
 import LibraryOverlay from './components/LibraryOverlay.vue'
 import TopBar from './components/TopBar.vue'
 import SettingsDropdown from './components/SettingsDropdown.vue'
@@ -189,6 +203,7 @@ onErrorCaptured((err) => {
 // --- Global Spotify SDK Setup ---
 const { initSpotifySDK } = useSpotifySDK()
 
+const karaokeRef = ref(null)
 
 // --- Composables ---
 const {
@@ -219,12 +234,18 @@ const { startUGImportPoll, stopUGImportPoll } = useUGImport(
   { chordSections, chordStructure, chordsFound, showChords }
 )
 
-const { syncPlaylist, backfillAlbumArt } = usePlaylistSync(favorites, userDefaults)
+const { syncPlaylist, backfillAlbumArt, backfillSyncedLyrics } = usePlaylistSync(favorites, userDefaults)
 
 const {
   spotifyConnected, spotifyUser,
   checkSpotifyStatus, connectSpotify, disconnectSpotify,
 } = useSpotifyAuth()
+
+const activeSpotifyTrackId = computed(() => {
+  if (!currentTitle.value) return null
+  const fav = favorites.value.find(f => f.title === currentTitle.value)
+  return fav?.spotifyTrackId || spotifyTrackId.value // fallback to fetched store ID
+})
 
 async function onDisconnectSpotify() {
   await disconnectSpotify()
@@ -264,6 +285,9 @@ const spotifyPlayerRef = ref(null)
 const editingLyrics = ref(false)
 const editLyricsText = ref('')
 const editTextarea = ref(null)
+const lyricView = ref('standard')
+const currentSyncedLyrics = ref('')
+const hasSyncedLyrics = computed(() => !!currentSyncedLyrics.value)
 
 function goHome() {
   goToPage('dashboard')
@@ -322,21 +346,28 @@ async function onSongSelect(fav) {
   const { title, fontAdjust: fa, merge, separators, altColors } = fav
   currentTitle.value = title
   
-  if ((fav.hasLyrics || fav.hasChords) && typeof fav.lyrics === 'undefined') {
+  // Fetch full record if we need lyrics, chords, or synced lyrics (not in summary)
+  const needsFull = ((fav.hasLyrics || fav.hasChords) && typeof fav.lyrics === 'undefined')
+    || (fav.hasSynced && typeof fav.syncedLyrics === 'undefined')
+  if (needsFull) {
     const fullSong = await api.getSong(fav.id)
     if (fullSong) {
       fav.lyrics = fullSong.lyrics
       fav.customChords = fullSong.customChords
+      fav.syncedLyrics = fullSong.syncedLyrics
     }
   }
   
   currentLyrics.value = fav.lyrics || ''
+  currentSyncedLyrics.value = fav.syncedLyrics || ''
   fontAdjust.value = fa || 0
   songMerge.value = merge !== undefined ? merge : userDefaults.value.merge
   songMergeAggressive.value = fav.mergeAggressive !== undefined ? fav.mergeAggressive : userDefaults.value.mergeAggressive
   songCollapseChorus.value = fav.collapseChorus !== undefined ? fav.collapseChorus : userDefaults.value.collapseChorus
   songSeparators.value = separators !== undefined ? separators : userDefaults.value.separators
   songAltColors.value = altColors !== undefined ? altColors : userDefaults.value.altColors
+  lyricView.value = fav.lyricView || 'standard'
+
   goToPage('lyrics')
   refreshCurrentSong()
   fetchChords(title)
@@ -366,6 +397,19 @@ function exitEditMode() {
 
 function cancelEditMode() {
   editingLyrics.value = false
+}
+
+// --- Karaoke view mode ---
+function onViewModeChanged(mode) {
+  lyricView.value = mode
+  // Persist to DB
+  if (isSaved.value && currentTitle.value) {
+    const fav = favorites.value.find(f => f.title === currentTitle.value)
+    if (fav) {
+      fav.lyricView = mode
+      if (fav.id) api.updateSong(fav.id, { lyricView: mode })
+    }
+  }
 }
 
 // --- Settings wrappers ---
@@ -421,6 +465,7 @@ onMounted(async () => {
 
   // Check Spotify connection first to decide sync strategy
   await checkSpotifyStatus()
+  initSpotifySDK()
 
   if (spotifyConnected.value) {
     // Server-side sync handles source playlist + not-in-playlist tracking
@@ -446,6 +491,7 @@ onMounted(async () => {
   }
 
   backfillAlbumArt()
+  backfillSyncedLyrics()
 })
 
 onUnmounted(() => {

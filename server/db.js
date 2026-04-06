@@ -60,6 +60,8 @@ db.exec(`
     merge_aggressive INTEGER DEFAULT 0,
     collapse_chorus  INTEGER DEFAULT 0,
     show_chords      INTEGER,
+    synced_lyrics    TEXT,
+    lyric_view       TEXT DEFAULT 'standard',
     created_at      TEXT DEFAULT (datetime('now')),
     updated_at      TEXT DEFAULT (datetime('now'))
   )
@@ -195,17 +197,19 @@ const stmts = {
   songByTitle:  db.prepare('SELECT * FROM songs WHERE title = ?'),
   songByTitleAndTrackId: db.prepare('SELECT * FROM songs WHERE title = ? AND COALESCE(spotify_track_id, \'\') = COALESCE(?, \'\')'),
   songCount:    db.prepare('SELECT COUNT(*) AS count FROM songs'),
-  summarySongs: db.prepare("SELECT id, title, font_adjust, merge, separators, alt_colors, label, played, play_count, custom_structure, spotify_track_id, album_art, capo, transpose, custom_labels, not_in_playlist, sort_order, merge_aggressive, collapse_chorus, CASE WHEN lyrics IS NOT NULL AND lyrics != '' THEN 1 ELSE 0 END as has_lyrics, CASE WHEN custom_chords IS NOT NULL AND custom_chords != '[]' THEN 1 ELSE 0 END as has_chords FROM songs ORDER BY sort_order ASC, id ASC"),
+  summarySongs: db.prepare("SELECT id, title, font_adjust, merge, separators, alt_colors, label, played, play_count, custom_structure, spotify_track_id, album_art, capo, transpose, custom_labels, not_in_playlist, sort_order, merge_aggressive, collapse_chorus, lyric_view, CASE WHEN lyrics IS NOT NULL AND lyrics != '' THEN 1 ELSE 0 END as has_lyrics, CASE WHEN custom_chords IS NOT NULL AND custom_chords != '[]' THEN 1 ELSE 0 END as has_chords, CASE WHEN synced_lyrics IS NOT NULL AND synced_lyrics != '' THEN 1 ELSE 0 END as has_synced FROM songs ORDER BY sort_order ASC, id ASC"),
 
   insertSong:   db.prepare(`
     INSERT INTO songs (title, lyrics, font_adjust, merge, separators, alt_colors,
       label, played, play_count, custom_chords, custom_structure,
       spotify_track_id, album_art, capo, transpose, custom_labels,
-      not_in_playlist, sort_order, merge_aggressive, collapse_chorus)
+      not_in_playlist, sort_order, merge_aggressive, collapse_chorus,
+      synced_lyrics, lyric_view)
     VALUES (@title, @lyrics, @font_adjust, @merge, @separators, @alt_colors,
       @label, @played, @play_count, @custom_chords, @custom_structure,
       @spotify_track_id, @album_art, @capo, @transpose, @custom_labels,
-      @not_in_playlist, @sort_order, @merge_aggressive, @collapse_chorus)
+      @not_in_playlist, @sort_order, @merge_aggressive, @collapse_chorus,
+      @synced_lyrics, @lyric_view)
   `),
 
   updateSong:  null,  // built dynamically per-request (partial updates)
@@ -247,6 +251,8 @@ const SCHEMA = [
   { key: 'mergeAggressive', col: 'merge_aggressive',   type: 'bool', default: false },
   { key: 'collapseChorus',  col: 'collapse_chorus',    type: 'bool', default: false },
   { key: 'showChords',      col: 'show_chords',        type: 'bool' },
+  { key: 'syncedLyrics',    col: 'synced_lyrics',       type: 'str' },
+  { key: 'lyricView',       col: 'lyric_view',          type: 'str',  default: 'standard' },
 ]
 
 // Derived lookups — computed once from SCHEMA
@@ -295,11 +301,12 @@ function rowToSongSummary(row) {
   if (!row) return null
   const obj = { id: row.id }
   for (const field of SCHEMA) {
-    if (field.key === 'lyrics') continue  // not fetched in summary query
+    if (field.key === 'lyrics' || field.key === 'syncedLyrics') continue  // not fetched in summary query
     obj[field.key] = decodeCol(field, row[field.col])
   }
   obj.hasLyrics = !!row.has_lyrics
   obj.hasChords = !!row.has_chords
+  obj.hasSynced = !!row.has_synced
   return obj
 }
 

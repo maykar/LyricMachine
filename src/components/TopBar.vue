@@ -1,6 +1,65 @@
 <template>
-  <!-- Top-left: font size controls -->
-  <div v-if="page === 'lyrics' && !editingLyrics && hasLyrics" class="top-left-group">
+  <!-- Top-left: Sync, View controls, font size controls -->
+  <div v-if="page === 'lyrics' && !editingLyrics && (hasLyrics || hasSyncedLyrics)" class="top-left-group">
+    <div class="label-wrapper">
+      <button
+        class="edit-action-btn view-mode-btn"
+        title="Change View Mode"
+        @click.stop="showViewMenu = !showViewMenu; showSettingsMenu = false; showLabelMenu = false"
+      >
+        <span class="view-mode-icon"><MdiIcon :path="mdiEyeOutline" :size="18"/></span>
+      </button>
+      <div v-if="showViewMenu" ref="viewMenuRef" class="settings-menu view-menu" @click.stop>
+        <button
+          class="label-option"
+          :class="{ active: lyricView === 'standard' }"
+          @click="$emit('view-mode-changed', 'standard'); showViewMenu = false"
+        >
+          Standard
+        </button>
+        <button
+          class="label-option"
+          :class="{ active: lyricView === 'karaoke' && !smoothMode, disabled: !hasSyncedLyrics }"
+          :disabled="!hasSyncedLyrics"
+          @click="hasSyncedLyrics && ($emit('view-mode-changed', 'karaoke'), smoothMode = false, showViewMenu = false)"
+        >
+          Karaoke
+          <span v-if="!hasSyncedLyrics" class="no-synced-hint">(no sync data)</span>
+        </button>
+        <button
+          class="label-option"
+          :class="{ active: lyricView === 'karaoke' && smoothMode, disabled: !hasSyncedLyrics }"
+          :disabled="!hasSyncedLyrics"
+          @click="hasSyncedLyrics && ($emit('view-mode-changed', 'karaoke'), smoothMode = true, showViewMenu = false)"
+        >
+          Teleprompter
+          <span v-if="!hasSyncedLyrics" class="no-synced-hint">(no sync data)</span>
+        </button>
+      </div>
+    </div>
+    
+    <button
+      v-if="(lyricView === 'karaoke' || smoothMode) && activeSpotifyTrackId"
+      class="edit-action-btn view-mode-btn sync-btn"
+      :class="{ 'is-active': syncSpotify }"
+      @click.stop="syncSpotify = !syncSpotify"
+      :title="syncSpotify ? 'Spotify Sync: ON' : 'Spotify Sync: OFF'"
+    >
+      <MdiIcon :path="syncSpotify ? mdiMusicNote : mdiMusicNoteOff" :size="18" />
+    </button>
+
+    <button
+      v-if="lyricView === 'karaoke' && smoothMode"
+      class="edit-action-btn view-mode-btn sync-btn"
+      :class="{ 'is-active': teleprompterHighlight }"
+      @click.stop="teleprompterHighlight = !teleprompterHighlight"
+      :title="teleprompterHighlight ? 'Active Line Highlight: ON' : 'Active Line Highlight: OFF'"
+    >
+      <MdiIcon :path="teleprompterHighlight ? mdiLightbulbOn : mdiLightbulbOutline" :size="18" />
+    </button>
+
+    <div v-if="(lyricView === 'karaoke' || smoothMode)" class="nav-divider"></div>
+
     <button class="edit-action-btn" @click="$emit('adjust-font', -1)" title="Decrease font"><MdiIcon :path="mdiMinus" :size="16" /></button>
     <button class="edit-action-btn" @click="$emit('reset-font')" title="Reset font"><MdiIcon :path="mdiRefresh" :size="16" /></button>
     <button class="edit-action-btn" @click="$emit('adjust-font', 1)" title="Increase font"><MdiIcon :path="mdiPlus" :size="16" /></button>
@@ -13,8 +72,6 @@
       <button class="edit-action-btn cancel" @click="$emit('cancel-edit')" title="Cancel"><MdiIcon :path="mdiClose" :size="16" /> Cancel</button>
     </template>
     <template v-else>
-      <button class="edit-action-btn" @click="$emit('enter-edit')" title="Edit lyrics"><MdiIcon :path="mdiPencil" :size="18" /></button>
-      <button class="edit-action-btn" @click="$emit('open-library')" title="Search"><MdiIcon :path="mdiMagnify" :size="18" /></button>
       <button
         v-if="isSaved"
         class="edit-action-btn played-btn"
@@ -25,11 +82,13 @@
         <span class="played-icon-inline" :class="{ checked: currentPlayed }"><MdiIcon :path="mdiCheck" :size="12" /></span>
         <span v-if="currentPlayCount" class="played-count-inline">{{ currentPlayCount }}</span>
       </button>
-      <div class="label-wrapper">
+
+      <button class="edit-action-btn" @click="$emit('enter-edit')" title="Edit lyrics"><MdiIcon :path="mdiPencil" :size="18" /></button>
+      <div v-if="lyricView !== 'karaoke'" class="label-wrapper">
         <button
           class="edit-action-btn"
           title="Display Settings"
-          @click.stop="showSettingsMenu = !showSettingsMenu; showLabelMenu = false"
+          @click.stop="showSettingsMenu = !showSettingsMenu; showLabelMenu = false; showViewMenu = false"
         >
           <MdiIcon :path="mdiCog" :size="18" />
         </button>
@@ -61,7 +120,7 @@
         <button
           class="edit-action-btn label-circle-btn"
           title="Set label"
-          @click.stop="showLabelMenu = !showLabelMenu; showSettingsMenu = false"
+          @click.stop="showLabelMenu = !showLabelMenu; showSettingsMenu = false; showViewMenu = false"
         >
           <span class="label-circle" :style="{ background: labelColor }"></span>
         </button>
@@ -87,6 +146,11 @@
       v-if="!editingLyrics && totalPages > 1"
       class="page-indicator"
     >{{ currentPage }} / {{ totalPages }}</span>
+
+    <!-- Fullscreen button -->
+    <button v-if="!editingLyrics" class="edit-action-btn view-mode-btn" @click="toggleFullscreen" title="Toggle Fullscreen">
+      <MdiIcon :path="mdiFullscreen" :size="18" />
+    </button>
   </div>
 </template>
 
@@ -95,8 +159,19 @@ import { ref, computed, watch, nextTick } from 'vue'
 import { useEventListener } from '@vueuse/core'
 import StarButton from './StarButton.vue'
 import MdiIcon from './MdiIcon.vue'
-import { mdiMinus, mdiPlus, mdiRefresh, mdiPencil, mdiMagnify, mdiCheck, mdiClose, mdiCog } from '@mdi/js'
+import { mdiMinus, mdiPlus, mdiRefresh, mdiPencil, mdiCheck, mdiClose, mdiCog, mdiFullscreen, mdiMusicNote, mdiMusicNoteOff, mdiEyeOutline, mdiLightbulbOn, mdiLightbulbOutline } from '@mdi/js'
 import { adjustDropdown } from '../utils/adjustDropdown.js'
+import { useSettingsStore } from '../stores/settings.js'
+
+function toggleFullscreen() {
+  if (!document.fullscreenElement) {
+    document.documentElement.requestFullscreen().catch(err => {
+      console.warn(`Error attempting to enable fullscreen: ${err.message}`)
+    })
+  } else {
+    document.exitFullscreen()
+  }
+}
 
 const props = defineProps({
   editingLyrics: { type: Boolean, default: false },
@@ -114,6 +189,9 @@ const props = defineProps({
   songCollapseChorus: { type: Boolean, default: false },
   songSeparators: { type: Boolean, default: false },
   songAltColors: { type: Boolean, default: true },
+  lyricView: { type: String, default: 'standard' },
+  hasSyncedLyrics: { type: Boolean, default: false },
+  activeSpotifyTrackId: { type: String, default: null },
 })
 
 defineEmits([
@@ -122,16 +200,46 @@ defineEmits([
   'open-library', 'toggle-settings', 'toggle-star',
   'set-label', 'toggle-played',
   'merge-changed', 'merge-aggressive-changed', 'collapse-chorus-changed',
-  'separators-changed', 'alt-colors-changed'
+  'separators-changed', 'alt-colors-changed',
+  'view-mode-changed'
 ])
+
+const settingsStore = useSettingsStore()
+
+const syncSpotify = computed({
+  get: () => settingsStore.userDefaults.karaokeSyncEnabled ?? true,
+  set: (val) => {
+    settingsStore.userDefaults.karaokeSyncEnabled = val
+    settingsStore.saveDefaults()
+  }
+})
+
+const smoothMode = computed({
+  get: () => settingsStore.userDefaults.karaokeSmoothEnabled ?? false,
+  set: (val) => {
+    settingsStore.userDefaults.karaokeSmoothEnabled = val
+    settingsStore.saveDefaults()
+  }
+})
+
+const teleprompterHighlight = computed({
+  get: () => settingsStore.userDefaults.teleprompterHighlightEnabled ?? true,
+  set: (val) => {
+    settingsStore.userDefaults.teleprompterHighlightEnabled = val
+    settingsStore.saveDefaults()
+  }
+})
 
 const showLabelMenu = ref(false)
 const labelMenuRef = ref(null)
 const showSettingsMenu = ref(false)
 const settingsMenuRef = ref(null)
+const showViewMenu = ref(false)
+const viewMenuRef = ref(null)
 
 watch(showLabelMenu, (v) => { if (v) adjustDropdown(labelMenuRef) })
 watch(showSettingsMenu, (v) => { if (v) adjustDropdown(settingsMenuRef) })
+watch(showViewMenu, (v) => { if (v) adjustDropdown(viewMenuRef) })
 
 import { LABEL_OPTIONS } from '../constants/labels.js'
 const labelOptions = LABEL_OPTIONS
@@ -143,7 +251,8 @@ const labelColor = computed(() => {
 
 function closeMenus() { 
   showLabelMenu.value = false 
-  showSettingsMenu.value = false 
+  showSettingsMenu.value = false
+  showViewMenu.value = false
 }
 useEventListener(document, 'click', closeMenus)
 </script>
@@ -175,6 +284,14 @@ useEventListener(document, 'click', closeMenus)
   border-bottom-right-radius: 0.625rem;
 }
 
+.nav-divider {
+  width: 1px;
+  height: 1.2rem;
+  background: var(--border-light);
+  opacity: 0.5;
+  margin: 0 0.25rem;
+}
+
 .edit-action-btn {
   background: none;
   border: none;
@@ -190,6 +307,10 @@ useEventListener(document, 'click', closeMenus)
 
 .edit-action-btn:hover {
   color: var(--accent);
+}
+
+.sync-btn.is-active {
+  color: var(--color-success);
 }
 
 .edit-action-btn.save {
@@ -263,6 +384,11 @@ useEventListener(document, 'click', closeMenus)
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+}
+
+.settings-menu.view-menu {
+  left: 0;
+  right: auto;
 }
 
 .dropdown-setting {
@@ -349,5 +475,30 @@ useEventListener(document, 'click', closeMenus)
   font-size: var(--font-sm);
   color: var(--text-dim);
   line-height: 1;
+}
+
+/* View mode switcher */
+.view-mode-btn {
+  font-size: 1rem;
+}
+
+.view-mode-icon {
+  font-size: 0.9rem;
+  line-height: 1;
+}
+
+.view-menu {
+  min-width: 8.5rem;
+}
+
+.label-option.disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.no-synced-hint {
+  font-size: 0.6rem;
+  color: var(--text-dim);
+  margin-left: 0.25rem;
 }
 </style>

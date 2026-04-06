@@ -43,7 +43,7 @@ async function handleSearch() {
 
     if (match) {
       const title = [match.artistName, match.trackName].filter(Boolean).join(' — ')
-      emit('select', { title, lyrics: match.plainLyrics })
+      emit('select', { title, lyrics: match.plainLyrics, syncedLyrics: match.syncedLyrics || null })
       statusText.value = ''
       query.value = ''
     } else {

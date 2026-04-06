@@ -136,11 +136,12 @@ async function syncSourcePlaylist(playlistId) {
     )
     for (let j = 0; j < batch.length; j++) {
       const track = batch[j]
-      const lyrics = lyricsResults[j]
+      const { plainLyrics, syncedLyrics } = lyricsResults[j]
       const title = `${track.artist} \u2014 ${track.name}`
       db.upsertSong({
         title,
-        lyrics,
+        lyrics: plainLyrics,
+        syncedLyrics: syncedLyrics || null,
         fontAdjust: 0,
         merge: defaults.merge || false,
         separators: defaults.separators || false,
@@ -149,7 +150,7 @@ async function syncSourcePlaylist(playlistId) {
         albumArt: track.albumArt || null,
       })
       imported++
-      console.log(`Source sync: imported "${track.name}" ${lyrics ? '(with lyrics)' : '(no lyrics)'}`)
+      console.log(`Source sync: imported "${track.name}" ${plainLyrics ? '(with lyrics)' : '(no lyrics)'}${syncedLyrics ? ' [synced]' : ''}`)
     }
   }
 

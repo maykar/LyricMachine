@@ -175,13 +175,19 @@ export function setupSpotifyAuthRoutes(server, { get, post, put, json, parseBody
         url.searchParams.append('device_id', deviceId)
       }
 
+      const { positionMs } = body || {}
+      const playBody = { uris: [`spotify:track:${trackId}`] }
+      if (typeof positionMs === 'number') {
+        playBody.position_ms = positionMs
+      }
+
       const playRes = await fetch(url.toString(), {
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ uris: [`spotify:track:${trackId}`] })
+        body: JSON.stringify(playBody)
       })
 
       if (!playRes.ok) {

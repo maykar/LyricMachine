@@ -30,18 +30,28 @@ export function usePlaylistSync(favorites, userDefaults) {
 
       for (const t of newTracks) {
         let lyrics = ''
+        let syncedLyrics = null
         try {
           const q = `${t.artist} ${t.track}`
           const lrcRes = await fetch(`https://lrclib.net/api/search?q=${encodeURIComponent(q)}`)
           if (lrcRes.ok) {
             const lrcData = await lrcRes.json()
-            const exact = lrcData.find(r =>
+            // Prefer exact match with synced lyrics
+            const exactSynced = lrcData.find(r =>
+              r.plainLyrics && r.syncedLyrics &&
+              normalize(r.artistName) === normalize(t.artist) &&
+              normalize(r.trackName) === normalize(t.track)
+            )
+            const exactPlain = lrcData.find(r =>
               r.plainLyrics &&
               normalize(r.artistName) === normalize(t.artist) &&
               normalize(r.trackName) === normalize(t.track)
             )
+            const fallbackSynced = lrcData.find(r => r.plainLyrics && r.syncedLyrics)
             const fallback = lrcData.find(r => r.plainLyrics)
-            lyrics = (exact || fallback)?.plainLyrics || ''
+            const best = exactSynced || exactPlain || fallbackSynced || fallback
+            lyrics = best?.plainLyrics || ''
+            syncedLyrics = best?.syncedLyrics || null
           }
         } catch (e) {
           console.warn(`Lyrics fetch failed for "${t.title}":`, e.message)
@@ -50,6 +60,7 @@ export function usePlaylistSync(favorites, userDefaults) {
         const newSong = {
           title: t.title,
           lyrics,
+          syncedLyrics,
           fontAdjust: 0,
           merge: userDefaults.value.merge || false,
           separators: userDefaults.value.separators || false,
@@ -64,7 +75,7 @@ export function usePlaylistSync(favorites, userDefaults) {
           existingNormalized.add(normalize(t.title))
         }
 
-        console.log(`Playlist sync: added "${t.track}" ${lyrics ? '(with lyrics)' : '(no lyrics found)'}`)
+        console.log(`Playlist sync: added "${t.track}" ${lyrics ? '(with lyrics)' : '(no lyrics found)'}${syncedLyrics ? ' [synced]' : ''}`)
       }
       
       updateToast(toastId, `Sync complete. Added ${newTracks.length} tracks.`, 'success')
@@ -110,5 +121,57 @@ export function usePlaylistSync(favorites, userDefaults) {
     }
   }
 
-  return { syncPlaylist, backfillAlbumArt }
+  async function backfillSyncedLyrics() {
+    try {
+      const favs = favorites.value
+      // Songs that have lyrics but no synced lyrics, and have a parseable "Artist — Track" title
+      const missing = favs.filter(f => f.hasLyrics && !f.hasSynced && f.title.includes(' — '))
+      if (!missing.length) return
+
+      console.log(`Synced lyrics backfill: ${missing.length} songs missing synced lyrics`)
+      let saved = 0
+
+      // Process in batches of 5 to avoid hammering lrclib
+      const BATCH = 5
+      for (let i = 0; i < missing.length; i += BATCH) {
+        const batch = missing.slice(i, i + BATCH)
+        const results = await Promise.all(batch.map(async (fav) => {
+          const parts = fav.title.split(' — ')
+          const artist = parts[0].trim()
+          const track = parts[1].trim()
+          try {
+            const q = `${artist} ${track}`
+            const res = await fetch(`https://lrclib.net/api/search?q=${encodeURIComponent(q)}`)
+            if (!res.ok) return null
+            const data = await res.json()
+            // Find a result with synced lyrics, prefer exact match
+            const exactSynced = data.find(r =>
+              r.syncedLyrics &&
+              normalize(r.artistName) === normalize(artist) &&
+              normalize(r.trackName) === normalize(track)
+            )
+            const fallbackSynced = data.find(r => r.syncedLyrics)
+            return { fav, syncedLyrics: (exactSynced || fallbackSynced)?.syncedLyrics || null }
+          } catch {
+            return null
+          }
+        }))
+
+        for (const result of results) {
+          if (!result?.syncedLyrics) continue
+          result.fav.hasSynced = true
+          result.fav.syncedLyrics = result.syncedLyrics
+          if (result.fav.id) {
+            api.updateSong(result.fav.id, { syncedLyrics: result.syncedLyrics })
+          }
+          saved++
+        }
+      }
+      console.log(`Synced lyrics backfill: updated ${saved} of ${missing.length} songs`)
+    } catch (e) {
+      console.error('Synced lyrics backfill failed:', e.message)
+    }
+  }
+
+  return { syncPlaylist, backfillAlbumArt, backfillSyncedLyrics }
 }

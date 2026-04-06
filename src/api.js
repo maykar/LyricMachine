@@ -120,7 +120,7 @@ export const api = {
   getSpotifyToken: () => get('/api/spotify/token'),
   getSpotifyId: (artist, track) =>
     get(`/api/spotify-id?artist=${encodeURIComponent(artist)}&track=${encodeURIComponent(track)}`),
-  playSpotify: ({ trackId, deviceId }) => put('/api/spotify/play', { trackId, deviceId }),
+  playSpotify: ({ trackId, deviceId, positionMs }) => put('/api/spotify/play', { trackId, deviceId, positionMs }),
   disconnectSpotify: () => post('/api/spotify/disconnect', {}),
   getSpotifyPlaylists: () => get('/api/spotify/playlists'),
   syncSpotify: () => post('/api/spotify/playlists/sync', {}),

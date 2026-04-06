@@ -59,24 +59,41 @@ export async function spotifyFetch(url, opts = {}, { token: preToken, maxRetries
 // --- lrclib.net lyrics search ---
 
 /**
- * Fetch plain lyrics from lrclib.net for a given artist + track.
- * Returns the lyrics string, or '' if not found.
+ * Fetch plain + synced lyrics from lrclib.net for a given artist + track.
+ * Returns { plainLyrics: string, syncedLyrics: string|null }.
  */
 export async function fetchLrcLibLyrics(artist, track) {
+  const empty = { plainLyrics: '', syncedLyrics: null }
   try {
     const q = `${artist} ${track}`
     const res = await fetch(`https://lrclib.net/api/search?q=${encodeURIComponent(q)}`)
-    if (!res.ok) return ''
+    if (!res.ok) return empty
 
     const data = await res.json()
-    const exact = data.find(r =>
+
+    // Prefer exact match with both plain + synced lyrics
+    const exactSynced = data.find(r =>
+      r.plainLyrics && r.syncedLyrics &&
+      normalize(r.artistName) === normalize(artist) &&
+      normalize(r.trackName) === normalize(track)
+    )
+    if (exactSynced) return { plainLyrics: exactSynced.plainLyrics, syncedLyrics: exactSynced.syncedLyrics }
+
+    // Exact match with plain only
+    const exactPlain = data.find(r =>
       r.plainLyrics &&
       normalize(r.artistName) === normalize(artist) &&
       normalize(r.trackName) === normalize(track)
     )
+    if (exactPlain) return { plainLyrics: exactPlain.plainLyrics, syncedLyrics: exactPlain.syncedLyrics || null }
+
+    // Fallback: any result with lyrics, prefer synced
+    const fallbackSynced = data.find(r => r.plainLyrics && r.syncedLyrics)
+    if (fallbackSynced) return { plainLyrics: fallbackSynced.plainLyrics, syncedLyrics: fallbackSynced.syncedLyrics }
+
     const fallback = data.find(r => r.plainLyrics)
-    return (exact || fallback)?.plainLyrics || ''
+    return fallback ? { plainLyrics: fallback.plainLyrics, syncedLyrics: fallback.syncedLyrics || null } : empty
   } catch {
-    return ''
+    return empty
   }
 }

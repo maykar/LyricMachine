@@ -670,7 +670,7 @@ async function toggleFavoriteResult(result) {
     favorites.value.splice(idx, 1)
     if (fav.id) api.deleteSong(fav.id)
   } else {
-    const created = await api.createSong({ title, lyrics: result.plainLyrics })
+    const created = await api.createSong({ title, lyrics: result.plainLyrics, syncedLyrics: result.syncedLyrics || null })
     if (created) {
       favorites.value.push(created)
     }
@@ -680,7 +680,7 @@ async function toggleFavoriteResult(result) {
 
 function selectResult(result) {
   const title = [result.artistName, result.trackName].filter(Boolean).join(' — ')
-  emit('select', { title, lyrics: result.plainLyrics })
+  emit('select', { title, lyrics: result.plainLyrics, syncedLyrics: result.syncedLyrics || null })
   query.value = ''
 }
 
