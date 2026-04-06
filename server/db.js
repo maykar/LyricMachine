@@ -57,6 +57,9 @@ db.exec(`
     custom_labels   TEXT DEFAULT '[]',
     not_in_playlist INTEGER DEFAULT 0,
     sort_order      INTEGER DEFAULT 0,
+    merge_aggressive INTEGER DEFAULT 0,
+    collapse_chorus  INTEGER DEFAULT 0,
+    show_chords      INTEGER,
     created_at      TEXT DEFAULT (datetime('now')),
     updated_at      TEXT DEFAULT (datetime('now'))
   )
@@ -133,6 +136,58 @@ function runMigrations() {
 
 runMigrations()
 
+// --- One-time JS data repairs (things SQL can't do) ---
+
+function repairCorruptedChords() {
+  const flag = 'repair_chord_tokens_v2'
+  const done = db.prepare('SELECT value FROM settings WHERE key = ?').get(flag)
+  if (done) return
+
+  const CHORD_RE = /^[A-G][#b]?(m|maj|min|dim|aug|sus\d?|add\d+|7|9|11|13|6)*(\/[A-G][#b]?)?$/
+
+  // Try to extract the longest valid chord prefix from a corrupted token
+  function fixToken(tok) {
+    if (CHORD_RE.test(tok)) return tok
+    // Trim characters from the end until it matches or is too short
+    for (let len = tok.length - 1; len >= 1; len--) {
+      const candidate = tok.slice(0, len)
+      if (CHORD_RE.test(candidate)) return candidate
+    }
+    return tok // give up, keep as-is
+  }
+
+  const rows = db.prepare('SELECT id, custom_chords FROM songs WHERE custom_chords IS NOT NULL').all()
+  let fixed = 0
+
+  for (const row of rows) {
+    let sections
+    try { sections = JSON.parse(row.custom_chords) } catch { continue }
+    if (!Array.isArray(sections)) continue
+
+    let changed = false
+    for (const section of sections) {
+      if (!section.chords || typeof section.chords !== 'string') continue
+      const tokens = section.chords.split(' · ')
+      const repaired = tokens.map(t => {
+        const f = fixToken(t)
+        if (f !== t) changed = true
+        return f
+      })
+      if (changed) section.chords = repaired.join(' · ')
+    }
+
+    if (changed) {
+      db.prepare('UPDATE songs SET custom_chords = ? WHERE id = ?').run(JSON.stringify(sections), row.id)
+      fixed++
+    }
+  }
+
+  db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(flag, '1')
+  if (fixed > 0) console.log(`Repaired chord tokens in ${fixed} song(s)`)
+}
+
+repairCorruptedChords()
+
 // --- Prepared statements ---
 const stmts = {
   allSongs:     db.prepare('SELECT * FROM songs ORDER BY sort_order ASC, id ASC'),
@@ -140,17 +195,17 @@ const stmts = {
   songByTitle:  db.prepare('SELECT * FROM songs WHERE title = ?'),
   songByTitleAndTrackId: db.prepare('SELECT * FROM songs WHERE title = ? AND COALESCE(spotify_track_id, \'\') = COALESCE(?, \'\')'),
   songCount:    db.prepare('SELECT COUNT(*) AS count FROM songs'),
-  summarySongs: db.prepare("SELECT id, title, font_adjust, merge, separators, alt_colors, label, played, play_count, custom_structure, spotify_track_id, album_art, capo, transpose, custom_labels, not_in_playlist, sort_order, CASE WHEN lyrics IS NOT NULL AND lyrics != '' THEN 1 ELSE 0 END as has_lyrics, CASE WHEN custom_chords IS NOT NULL AND custom_chords != '[]' THEN 1 ELSE 0 END as has_chords FROM songs ORDER BY sort_order ASC, id ASC"),
+  summarySongs: db.prepare("SELECT id, title, font_adjust, merge, separators, alt_colors, label, played, play_count, custom_structure, spotify_track_id, album_art, capo, transpose, custom_labels, not_in_playlist, sort_order, merge_aggressive, collapse_chorus, CASE WHEN lyrics IS NOT NULL AND lyrics != '' THEN 1 ELSE 0 END as has_lyrics, CASE WHEN custom_chords IS NOT NULL AND custom_chords != '[]' THEN 1 ELSE 0 END as has_chords FROM songs ORDER BY sort_order ASC, id ASC"),
 
   insertSong:   db.prepare(`
     INSERT INTO songs (title, lyrics, font_adjust, merge, separators, alt_colors,
       label, played, play_count, custom_chords, custom_structure,
       spotify_track_id, album_art, capo, transpose, custom_labels,
-      not_in_playlist, sort_order)
+      not_in_playlist, sort_order, merge_aggressive, collapse_chorus)
     VALUES (@title, @lyrics, @font_adjust, @merge, @separators, @alt_colors,
       @label, @played, @play_count, @custom_chords, @custom_structure,
       @spotify_track_id, @album_art, @capo, @transpose, @custom_labels,
-      @not_in_playlist, @sort_order)
+      @not_in_playlist, @sort_order, @merge_aggressive, @collapse_chorus)
   `),
 
   updateSong:  null,  // built dynamically per-request (partial updates)
@@ -189,6 +244,9 @@ const SCHEMA = [
   { key: 'customLabels',    col: 'custom_labels',      type: 'json', default: [] },
   { key: 'notInPlaylist',   col: 'not_in_playlist',    type: 'bool', default: false },
   { key: 'sortOrder',       col: 'sort_order',         type: 'int',  default: 0 },
+  { key: 'mergeAggressive', col: 'merge_aggressive',   type: 'bool', default: false },
+  { key: 'collapseChorus',  col: 'collapse_chorus',    type: 'bool', default: false },
+  { key: 'showChords',      col: 'show_chords',        type: 'bool' },
 ]
 
 // Derived lookups — computed once from SCHEMA
@@ -200,7 +258,10 @@ const JSON_FIELDS = new Set(SCHEMA.filter(f => f.type === 'json').map(f => f.col
 
 /** Decode a single DB column value based on its schema type */
 function decodeCol(field, colValue) {
-  if (field.type === 'bool')  return !!colValue
+  if (field.type === 'bool') {
+    if (colValue == null) return field.default ?? undefined
+    return !!colValue
+  }
   if (field.type === 'json') {
     if (colValue == null || colValue === '') return field.default ?? undefined
     try { return JSON.parse(colValue) } catch { return field.default ?? undefined }
@@ -212,7 +273,7 @@ function decodeCol(field, colValue) {
 
 /** Encode a client-side value for DB storage */
 function encodeCol(field, value) {
-  if (field.type === 'bool') return value ? 1 : 0
+  if (field.type === 'bool') return value == null ? null : (value ? 1 : 0)
   if (field.type === 'json') return value != null ? JSON.stringify(value) : null
   return value ?? null
 }

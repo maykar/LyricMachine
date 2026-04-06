@@ -38,5 +38,6 @@ export function useChords() {
     onChordsEdited: store.onChordsEdited,
     onResetChords: store.onResetChords,
     onTransposeChords: store.onTransposeChords,
+    toggleChords: store.toggleChords,
   }
 }

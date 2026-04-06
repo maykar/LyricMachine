@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { api } from '../api.js'
 import { useToastStore } from './toast.js'
 
@@ -17,12 +17,65 @@ export const useFavoritesStore = defineStore('favorites', () => {
   const currentLyrics = ref('')
   const fontAdjust = ref(0)
   const songMerge = ref(false)
+  const songMergeAggressive = ref(false)
+  const songCollapseChorus = ref(false)
   const songSeparators = ref(false)
   const songAltColors = ref(true)
   const isSaved = ref(false)
   const currentLabel = ref(null)
   const currentPlayed = ref(false)
   const currentPlayCount = ref(0)
+
+  // --- Library filters & sorting ---
+  const hidePlayed = ref(false)
+  const filterNoChords = ref(false)
+  const filterFresh = ref(false)
+  const filterGettingThere = ref(false)
+  const filterInSetlist = ref(false)
+  const filterIgnored = ref(false)
+  const filterNotInPlaylist = ref(false)
+  const filterCustomLabels = ref([])
+  const sortBy = ref('none')
+  const sortDir = ref('asc')
+
+  const displayedFavorites = computed(() => {
+    let list = favorites.value
+    if (hidePlayed.value) list = list.filter(f => !f.played)
+    if (filterNoChords.value) list = list.filter(f => !f.hasChords)
+    if (filterNotInPlaylist.value) list = list.filter(f => !!f.notInPlaylist)
+    const anyLabel = filterFresh.value || filterGettingThere.value || filterInSetlist.value || filterIgnored.value || filterCustomLabels.value.length > 0
+    if (anyLabel) {
+      list = list.filter(f => {
+        const lbl = f.label || 'fresh'
+        if (filterFresh.value && lbl === 'fresh') return true
+        if (filterGettingThere.value && lbl === 'getting-there') return true
+        if (filterInSetlist.value && lbl === 'in-setlist') return true
+        if (filterIgnored.value && lbl === 'ignored') return true
+        if (filterCustomLabels.value.length > 0) {
+          const cLabels = f.customLabels || []
+          if (filterCustomLabels.value.some(l => cLabels.includes(l))) return true
+        }
+        return false
+      })
+    } else {
+      list = list.filter(f => f.label !== 'ignored')
+    }
+    if (sortBy.value !== 'none') {
+      const labelOrder = { 'fresh': 0, 'getting-there': 1, 'in-setlist': 2, 'ignored': 3 }
+      list = [...list].sort((a, b) => {
+        let cmp = 0
+        if (sortBy.value === 'alpha') {
+          cmp = (a.title || '').localeCompare(b.title || '')
+        } else if (sortBy.value === 'label') {
+          cmp = (labelOrder[a.label] || 0) - (labelOrder[b.label] || 0)
+        } else if (sortBy.value === 'playCount') {
+          cmp = (a.playCount || 0) - (b.playCount || 0)
+        }
+        return sortDir.value === 'asc' ? cmp : -cmp
+      })
+    }
+    return list
+  })
 
   /** Fetch all songs from the server and populate the reactive cache */
   async function loadFavorites() {
@@ -64,6 +117,8 @@ export const useFavoritesStore = defineStore('favorites', () => {
     const fav = favorites.value.find(f => f.title === currentTitle.value)
     if (fav) {
       songMerge.value = fav.merge || false
+      songMergeAggressive.value = fav.mergeAggressive || false
+      songCollapseChorus.value = fav.collapseChorus || false
       songSeparators.value = fav.separators || false
       songAltColors.value = fav.altColors !== false
       currentLabel.value = fav.label || 'fresh'
@@ -93,6 +148,8 @@ export const useFavoritesStore = defineStore('favorites', () => {
         lyrics: currentLyrics.value,
         fontAdjust: fontAdjust.value,
         merge: songMerge.value,
+        mergeAggressive: songMergeAggressive.value,
+        collapseChorus: songCollapseChorus.value,
         separators: songSeparators.value,
         altColors: songAltColors.value,
         label: 'fresh',
@@ -137,6 +194,16 @@ export const useFavoritesStore = defineStore('favorites', () => {
     updateFavProp('merge', merge)
   }
 
+  function onMergeAggressiveChanged(val) {
+    songMergeAggressive.value = val
+    updateFavProp('mergeAggressive', val)
+  }
+
+  function onCollapseChorusChanged(val) {
+    songCollapseChorus.value = val
+    updateFavProp('collapseChorus', val)
+  }
+
   function onSeparatorsChanged(val) {
     songSeparators.value = val
     updateFavProp('separators', val)
@@ -168,12 +235,25 @@ export const useFavoritesStore = defineStore('favorites', () => {
     currentLyrics,
     fontAdjust,
     songMerge,
+    songMergeAggressive,
+    songCollapseChorus,
     songSeparators,
     songAltColors,
     isSaved,
     currentLabel,
     currentPlayed,
     currentPlayCount,
+    hidePlayed,
+    filterNoChords,
+    filterFresh,
+    filterGettingThere,
+    filterInSetlist,
+    filterIgnored,
+    filterNotInPlaylist,
+    filterCustomLabels,
+    sortBy,
+    sortDir,
+    displayedFavorites,
     getFavorites,
     loadFavorites,
     refreshSavedState,
@@ -181,6 +261,8 @@ export const useFavoritesStore = defineStore('favorites', () => {
     toggleStar,
     onAdjustChanged,
     onMergeChanged,
+    onMergeAggressiveChanged,
+    onCollapseChorusChanged,
     onSeparatorsChanged,
     onAltColorsChanged,
     setLabel,

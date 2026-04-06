@@ -237,8 +237,12 @@ import { api } from '../api.js'
 import { adjustDropdown } from '../utils/adjustDropdown.js'
 import { useCustomLabelsStore } from '../stores/customLabels.js'
 
-// Storage keys removed — all persistence via server API
-const { favorites } = useFavorites()
+const {
+  favorites,
+  hidePlayed, filterNoChords, filterFresh, filterGettingThere,
+  filterInSetlist, filterIgnored, filterNotInPlaylist, filterCustomLabels,
+  sortBy, sortDir, displayedFavorites
+} = useFavorites()
 const customLabelsStore = useCustomLabelsStore()
 const labelOptions = LABEL_OPTIONS
 
@@ -249,17 +253,7 @@ const inputRef = ref(null)
 const favContainerRef = ref(null)
 const backdropMouseDown = ref(false)
 const showNewSong = ref(false)
-const hidePlayed = ref(false)
-const filterNoChords = ref(false)
-const filterFresh = ref(false)
-const filterGettingThere = ref(false)
-const filterInSetlist = ref(false)
-const filterIgnored = ref(false)
-const filterNotInPlaylist = ref(false)
-const filterCustomLabels = ref([])
 const showFilterDropdown = ref(false)
-const sortBy = ref('none')
-const sortDir = ref('asc')
 const showSortDropdown = ref(false)
 const filterDropRef = ref(null)
 const sortDropRef = ref(null)
@@ -531,46 +525,6 @@ function recalcLayout() {
     rowsPerPage.value = rows
   }
 }
-
-const displayedFavorites = computed(() => {
-  let list = favorites.value
-  if (hidePlayed.value) list = list.filter(f => !f.played)
-  if (filterNoChords.value) list = list.filter(f => !f.hasChords)
-  if (filterNotInPlaylist.value) list = list.filter(f => !!f.notInPlaylist)
-  const anyLabel = filterFresh.value || filterGettingThere.value || filterInSetlist.value || filterIgnored.value || filterCustomLabels.value.length > 0
-  if (anyLabel) {
-    list = list.filter(f => {
-      const lbl = f.label || 'fresh'
-      if (filterFresh.value && lbl === 'fresh') return true
-      if (filterGettingThere.value && lbl === 'getting-there') return true
-      if (filterInSetlist.value && lbl === 'in-setlist') return true
-      if (filterIgnored.value && lbl === 'ignored') return true
-      if (filterCustomLabels.value.length > 0) {
-        const cLabels = f.customLabels || []
-        if (filterCustomLabels.value.some(l => cLabels.includes(l))) return true
-      }
-      return false
-    })
-  } else {
-    // Hide ignored songs by default when no label filters are active
-    list = list.filter(f => f.label !== 'ignored')
-  }
-  if (sortBy.value !== 'none') {
-    const labelOrder = { 'fresh': 0, 'getting-there': 1, 'in-setlist': 2, 'ignored': 3 }
-    list = [...list].sort((a, b) => {
-      let cmp = 0
-      if (sortBy.value === 'alpha') {
-        cmp = (a.title || '').localeCompare(b.title || '')
-      } else if (sortBy.value === 'label') {
-        cmp = (labelOrder[a.label] || 0) - (labelOrder[b.label] || 0)
-      } else if (sortBy.value === 'playCount') {
-        cmp = (a.playCount || 0) - (b.playCount || 0)
-      }
-      return sortDir.value === 'asc' ? cmp : -cmp
-    })
-  }
-  return list
-})
 
 const perPage = computed(() => rowsPerPage.value * cols.value)
 const favTotalPages = computed(() => Math.max(1, Math.ceil(displayedFavorites.value.length / perPage.value)))

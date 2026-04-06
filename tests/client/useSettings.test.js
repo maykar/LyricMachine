@@ -49,17 +49,17 @@ describe('useSettings', () => {
       api.getSetting.mockResolvedValue(null)
 
       await settings.loadUserDefaults()
-      expect(settings.userDefaults.value).toEqual({ altColors: true, separators: false, merge: false })
+      expect(settings.userDefaults.value).toEqual({ altColors: true, separators: false, merge: false, mergeAggressive: false, collapseChorus: false })
     })
   })
 
   describe('saveDefaults', () => {
     it('calls api.setSettingRaw with current defaults', async () => {
       api.setSettingRaw.mockResolvedValue(null)
-      settings.userDefaults.value = { altColors: false, separators: true, merge: true }
+      settings.userDefaults.value = { altColors: false, separators: true, merge: true, mergeAggressive: true, collapseChorus: false }
 
       await settings.saveDefaults()
-      expect(api.setSettingRaw).toHaveBeenCalledWith('defaults', { altColors: false, separators: true, merge: true })
+      expect(api.setSettingRaw).toHaveBeenCalledWith('defaults', { altColors: false, separators: true, merge: true, mergeAggressive: true, collapseChorus: false })
     })
   })
 
@@ -74,17 +74,19 @@ describe('useSettings', () => {
     it('calls bulkUpdate for each setting and updates local favs', async () => {
       api.bulkUpdate.mockResolvedValue({})
       fav.favorites.value = [
-        { id: 1, altColors: false, separators: false, merge: false },
-        { id: 2, altColors: false, separators: false, merge: false },
+        { id: 1, altColors: false, separators: false, merge: false, mergeAggressive: false, collapseChorus: false },
+        { id: 2, altColors: false, separators: false, merge: false, mergeAggressive: false, collapseChorus: false },
       ]
-      settings.userDefaults.value = { altColors: true, separators: true, merge: true }
+      settings.userDefaults.value = { altColors: true, separators: true, merge: true, mergeAggressive: true, collapseChorus: true }
 
       await settings.applyDefaultsToAll()
 
-      expect(api.bulkUpdate).toHaveBeenCalledTimes(3)
+      expect(api.bulkUpdate).toHaveBeenCalledTimes(5)
       expect(api.bulkUpdate).toHaveBeenCalledWith('altColors', true)
       expect(api.bulkUpdate).toHaveBeenCalledWith('separators', true)
       expect(api.bulkUpdate).toHaveBeenCalledWith('merge', true)
+      expect(api.bulkUpdate).toHaveBeenCalledWith('mergeAggressive', true)
+      expect(api.bulkUpdate).toHaveBeenCalledWith('collapseChorus', true)
 
       // Local favs updated
       expect(fav.favorites.value[0].altColors).toBe(true)

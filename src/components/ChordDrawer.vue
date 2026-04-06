@@ -151,8 +151,10 @@ function transposeNote(note, semitones) {
     return transposeNote(main, semitones) + '/' + transposeNote(bass, semitones)
   }
 
-  // Extract root and suffix — handle #, b, and s notations for sharps
-  const match = note.match(/^([A-G][#bs]?)(.*)$/)
+  // Extract root and suffix — handle #, b, and s notations for sharps.
+  // The 's' sharp suffix (e.g. Cs, Ds from UG) must NOT match the 's' in 'sus4'/'sus2',
+  // so we use a negative lookahead: 's' only if not followed by a vowel.
+  const match = note.match(/^([A-G](?:[#b]|s(?![aeiou]))?)(.*)/)
   if (!match) return note
 
   let root = match[1]

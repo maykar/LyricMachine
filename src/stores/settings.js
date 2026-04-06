@@ -11,7 +11,7 @@ import { useChordsStore } from './chords.js'
  * Now a Pinia store with proper singleton guarantees.
  */
 export const useSettingsStore = defineStore('settings', () => {
-  const userDefaults = ref({ altColors: true, separators: false, merge: false })
+  const userDefaults = ref({ altColors: true, separators: false, merge: false, mergeAggressive: false, collapseChorus: false })
   const applyStatus = ref('')
   const resetChordStatus = ref('')
 
@@ -41,11 +41,15 @@ export const useSettingsStore = defineStore('settings', () => {
       await api.bulkUpdate('altColors', userDefaults.value.altColors)
       await api.bulkUpdate('separators', userDefaults.value.separators)
       await api.bulkUpdate('merge', userDefaults.value.merge)
+      await api.bulkUpdate('mergeAggressive', userDefaults.value.mergeAggressive)
+      await api.bulkUpdate('collapseChorus', userDefaults.value.collapseChorus)
 
       for (const fav of favs) {
         fav.altColors = userDefaults.value.altColors
         fav.separators = userDefaults.value.separators
         fav.merge = userDefaults.value.merge
+        fav.mergeAggressive = userDefaults.value.mergeAggressive
+        fav.collapseChorus = userDefaults.value.collapseChorus
       }
 
       applyStatus.value = `Updated ${favs.length} favorites`

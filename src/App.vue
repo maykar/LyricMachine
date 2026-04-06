@@ -22,6 +22,16 @@
       @toggle-star="toggleStar"
       @set-label="onSetLabel"
       @toggle-played="togglePlayed"
+      :song-merge="songMerge"
+      :song-merge-aggressive="songMergeAggressive"
+      :song-collapse-chorus="songCollapseChorus"
+      :song-separators="songSeparators"
+      :song-alt-colors="songAltColors"
+      @merge-changed="onMergeChanged"
+      @merge-aggressive-changed="onMergeAggressiveChanged"
+      @collapse-chorus-changed="onCollapseChorusChanged"
+      @separators-changed="onSeparatorsChanged"
+      @alt-colors-changed="onAltColorsChanged"
     />
 
     <!-- Settings modal -->
@@ -58,11 +68,15 @@
         :lyrics="currentLyrics"
         :initial-adjust="fontAdjust"
         :initial-merge="songMerge"
+        :initial-merge-aggressive="songMergeAggressive"
+        :initial-collapse-chorus="songCollapseChorus"
         :initial-separators="songSeparators"
         :initial-alt-colors="songAltColors"
         :overlay-open="hasModal"
         @adjust-changed="onAdjustChanged"
         @merge-changed="onMergeChanged"
+        @merge-aggressive-changed="onMergeAggressiveChanged"
+        @collapse-chorus-changed="onCollapseChorusChanged"
         @separators-changed="onSeparatorsChanged"
         @alt-colors-changed="onAltColorsChanged"
       />
@@ -179,10 +193,11 @@ const { initSpotifySDK } = useSpotifySDK()
 // --- Composables ---
 const {
   currentTitle, currentLyrics, fontAdjust,
-  songMerge, songSeparators, songAltColors, isSaved, currentLabel, currentPlayed, currentPlayCount,
+  songMerge, songMergeAggressive, songCollapseChorus, songSeparators, songAltColors, isSaved, currentLabel, currentPlayed, currentPlayCount,
   favorites, getFavorites, loadFavorites,
   refreshSavedState, refreshCurrentSong, toggleStar, setLabel, togglePlayed,
-  onAdjustChanged, onMergeChanged, onSeparatorsChanged, onAltColorsChanged,
+  displayedFavorites,
+  onAdjustChanged, onMergeChanged, onMergeAggressiveChanged, onCollapseChorusChanged, onSeparatorsChanged, onAltColorsChanged,
 } = useFavorites()
 
 const {
@@ -196,7 +211,7 @@ const {
   showChords, chordsLoading, chordsFound,
   chordSections, chordStructure, chordCapo, chordTranspose,
   spotifyTrackId, showPlayer, hasCustomChords,
-  fetchChords, onChordsEdited, onResetChords, onTransposeChords,
+  fetchChords, onChordsEdited, onResetChords, onTransposeChords, toggleChords
 } = useChords()
 
 const { startUGImportPoll, stopUGImportPoll } = useUGImport(
@@ -271,6 +286,18 @@ function onRandomizerSelect(fav) {
   onSongSelect(fav)
 }
 
+function navigateSong(dir) {
+  const list = displayedFavorites.value
+  if (!list || list.length === 0) return
+  const currentIdx = list.findIndex(f => f.title === currentTitle.value)
+  if (currentIdx < 0) return
+  
+  let nextIdx = (currentIdx + dir) % list.length
+  if (nextIdx < 0) nextIdx += list.length
+  
+  onSongSelect(list[nextIdx])
+}
+
 // --- Keyboard shortcuts ---
 useKeyboard({
   editingLyrics,
@@ -285,6 +312,8 @@ useKeyboard({
   currentTitle,
   currentLyrics,
   startUGImportPoll,
+  navigateSong,
+  toggleChords,
 })
 
 // --- Song selection ---
@@ -304,6 +333,8 @@ async function onSongSelect(fav) {
   currentLyrics.value = fav.lyrics || ''
   fontAdjust.value = fa || 0
   songMerge.value = merge !== undefined ? merge : userDefaults.value.merge
+  songMergeAggressive.value = fav.mergeAggressive !== undefined ? fav.mergeAggressive : userDefaults.value.mergeAggressive
+  songCollapseChorus.value = fav.collapseChorus !== undefined ? fav.collapseChorus : userDefaults.value.collapseChorus
   songSeparators.value = separators !== undefined ? separators : userDefaults.value.separators
   songAltColors.value = altColors !== undefined ? altColors : userDefaults.value.altColors
   goToPage('lyrics')

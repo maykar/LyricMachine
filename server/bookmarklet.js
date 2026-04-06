@@ -1,5 +1,5 @@
 (async function() {
-  var API_BASE = 'http:' + String.fromCharCode(47, 47) + 'localhost:5555';
+  var API_BASE = 'https:' + String.fromCharCode(47, 47) + '127.0.0.1:5555';
 
   try {
     var isChordPage = window.location.href.indexOf('/tab/') !== -1;
@@ -14,11 +14,21 @@
         return;
       }
       var html = pre.innerHTML;
-      console.log('[UG Import] Sending ' + html.length + ' chars to server for parsing');
-      var blob = new Blob([JSON.stringify({ html: html })], { type: 'text/plain' });
-      var sent = navigator.sendBeacon(API_BASE + '/api/import-raw', blob);
-      console.log('[UG Import] sendBeacon result: ' + sent);
-      setTimeout(function() { open(location, '_self').close(); }, 1000);
+      console.log('[UG Import] Sending ' + html.length + ' chars to server for parsing via fetch');
+      fetch(API_BASE + '/api/import-raw', {
+        method: 'POST',
+        body: JSON.stringify({ html: html }),
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        mode: 'cors'
+      }).then(function(res) {
+        console.log('[UG Import] Fetch response:', res.status);
+        setTimeout(function() { open(location, '_self').close(); }, 1000);
+      }).catch(function(err) {
+        console.error('[UG Import] Fetch error:', err);
+        alert('UG Import fetch failed. Check server.');
+      });
     } else {
       var allLinks = document.querySelectorAll('a[href*="/tab/"]');
       console.log('[UG Import] Found ' + allLinks.length + ' links with /tab/ in href');

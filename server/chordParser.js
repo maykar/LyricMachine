@@ -11,7 +11,7 @@ const SECTION_MAP = {
   'modulation': 'MODULATION', 'vamp': 'VAMP'
 }
 
-const CHORD_RE = /^[A-G][#b]?(m|maj|min|dim|aug|sus\d?|add\d+|7|9|11|13|6|\d)*(\/[A-G][#b]?)?$/
+const CHORD_RE = /^[A-G][#b]?(m|maj|min|dim|aug|sus\d?|add\d+|7|9|11|13|6)*(\/[A-G][#b]?)?$/
 
 function mapSection(raw) {
   const lower = raw.toLowerCase().replace(/\s*\d+$/, '').replace(/\s*\(.*\)$/, '').trim()
@@ -25,7 +25,8 @@ function isChordToken(tok) {
 function isChordLine(text) {
   if (!text || text.length < 1) return false
   if (/^\[/.test(text)) return false
-  if (/^[eBGDAE]\s*[:\-|]/.test(text)) return false
+  if (/^[A-Ga-g][#b]?\s*[:\-|]/i.test(text)) return false
+  if (/tun(ing|e)/i.test(text)) return false
   if (/[-x]\d{4,}/.test(text)) return false
   if (/-{4,}/.test(text)) return false
   if (/^\*/.test(text)) return false
@@ -142,7 +143,7 @@ export function parseChordHTML(html) {
 
     if (inChordsUsedBlock) continue
     if (/^[\w\s]+([-x]+\d{4,}|[-x]\s*\d{3,})/.test(textLine)) continue
-    if (/^[eBGDAE]\s*[:\-|]/.test(textLine)) continue
+    if (/^[A-Ga-g][#b]?\s*[:\-|]/i.test(textLine)) continue
     if (/-{4,}/.test(textLine)) continue
 
     const spanChords = []

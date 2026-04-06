@@ -22,6 +22,8 @@ export function useKeyboard({
   currentTitle,
   currentLyrics,
   startUGImportPoll,
+  navigateSong,
+  toggleChords
 }) {
   function onKeydown(e) {
     if (e.ctrlKey || e.altKey || e.metaKey) return
@@ -70,7 +72,7 @@ export function useKeyboard({
       case 'c':
       case 'C':
         if (page.value === 'lyrics') {
-          showChords.value = !showChords.value
+          if (toggleChords) toggleChords()
         }
         break
 
@@ -84,6 +86,16 @@ export function useKeyboard({
       case 'r':
       case 'R':
         pushModal('randomizer')
+        break
+
+      case ',':
+      case '<':
+        if (page.value === 'lyrics' && navigateSong) navigateSong(-1)
+        break
+
+      case '.':
+      case '>':
+        if (page.value === 'lyrics' && navigateSong) navigateSong(1)
         break
     }
   }

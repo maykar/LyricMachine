@@ -50,7 +50,7 @@ describe('useKeyboard', () => {
       dismissTop: vi.fn(),
       goToPage: vi.fn(),
       pushModal: vi.fn(),
-      showChords: ref(false),
+      toggleChords: vi.fn(),
       showPlayer: ref(false),
       currentTitle: ref('Artist — Track'),
       currentLyrics: ref('lyrics'),
@@ -154,9 +154,8 @@ describe('useKeyboard', () => {
     })
 
     it('C toggles chords', () => {
-      deps.showChords.value = false
       capturedHandler(makeEvent('c'))
-      expect(deps.showChords.value).toBe(true)
+      expect(deps.toggleChords).toHaveBeenCalled()
     })
 
     it('P toggles player', () => {

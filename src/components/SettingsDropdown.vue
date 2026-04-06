@@ -20,6 +20,14 @@
               <input type="checkbox" v-model="defaults.merge" @change="$emit('save-defaults')" />
               <span>Line merging</span>
             </label>
+            <label class="setting-row">
+              <input type="checkbox" v-model="defaults.mergeAggressive" @change="$emit('save-defaults')" />
+              <span>Aggressive merging</span>
+            </label>
+            <label class="setting-row">
+              <input type="checkbox" v-model="defaults.collapseChorus" @change="$emit('save-defaults')" />
+              <span>Collapse repeated sections</span>
+            </label>
             <button class="accent-btn settings-btn" @click="$emit('apply-defaults-to-all')">Apply defaults to all</button>
             <span v-if="applyStatus" class="status-msg">{{ applyStatus }}</span>
           </div>
@@ -33,6 +41,7 @@
             <div class="shortcut-row"><kbd>T</kbd> <span>Search chords (Ultimate Guitar)</span></div>
             <div class="shortcut-row"><kbd>+ / −</kbd> <span>Adjust font size</span></div>
             <div class="shortcut-row"><kbd>← →</kbd> <span>Navigate pages</span></div>
+            <div class="shortcut-row"><kbd>&lt; &gt;</kbd> <span>Next/previous song</span></div>
           </div>
         </div>
 
@@ -442,6 +451,14 @@ onMounted(async () => {
   align-items: stretch;
   gap: 0.25rem;
   cursor: default;
+}
+
+.disabled-text {
+  opacity: 0.5;
+}
+
+.edit-action-btn.cancel:hover {
+  color: var(--text-muted);
 }
 
 .setting-row--input:hover {

@@ -22,6 +22,8 @@ export const SongCreateSchema = v.object({
   lyrics: v.optional(v.string(), ''),
   fontAdjust: v.optional(v.pipe(v.number(), v.integer())),
   merge: BoolInt,
+  mergeAggressive: BoolInt,
+  collapseChorus: BoolInt,
   separators: BoolInt,
   altColors: BoolInt,
   label: Label,
@@ -35,6 +37,7 @@ export const SongCreateSchema = v.object({
   transpose: v.optional(v.pipe(v.number(), v.integer(), v.minValue(-12), v.maxValue(12))),
   customLabels: v.optional(v.array(v.pipe(v.string(), v.trim(), v.minLength(1)))),
   notInPlaylist: BoolInt,
+  showChords: BoolInt,
 })
 
 export const SongUpdateSchema = v.partial(SongCreateSchema)
@@ -43,7 +46,7 @@ export const ReorderSchema = v.object({
   ids: v.pipe(v.array(v.pipe(v.number(), v.integer(), v.minValue(1))), v.minLength(1, 'ids array required')),
 })
 
-const BULK_FIELDS = ['played', 'playCount', 'fontAdjust', 'merge', 'separators', 'altColors', 'label']
+const BULK_FIELDS = ['played', 'playCount', 'fontAdjust', 'merge', 'mergeAggressive', 'collapseChorus', 'separators', 'altColors', 'label', 'showChords']
 export const BulkUpdateSchema = v.object({
   field: v.picklist(BULK_FIELDS, 'invalid field'),
   value: v.union([v.string(), v.number(), v.boolean(), v.null()]),
@@ -55,6 +58,8 @@ export const ImportSchema = v.pipe(
     lyrics: v.optional(v.string()),
     fontAdjust: v.optional(v.pipe(v.number(), v.integer())),
     merge: v.optional(v.pipe(v.number(), v.integer())),
+    mergeAggressive: v.optional(v.pipe(v.number(), v.integer())),
+    collapseChorus: v.optional(v.pipe(v.number(), v.integer())),
     separators: v.optional(v.pipe(v.number(), v.integer())),
     altColors: v.optional(v.pipe(v.number(), v.integer())),
     label: v.optional(v.string()),

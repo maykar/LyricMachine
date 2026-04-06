@@ -57,7 +57,7 @@ export const useChordsStore = defineStore('chords', () => {
       showPlayer.value = false
     }
 
-    showChords.value = true
+    // showChords state is determined after loading fav data
     chordsLoading.value = true
     chordsFound.value = false
     chordSections.value = []
@@ -81,7 +81,11 @@ export const useChordsStore = defineStore('chords', () => {
       chordCapo.value = fav.capo ?? null
       chordsFound.value = true
       chordsLoading.value = false
-      showChords.value = true
+      if (fav.showChords !== undefined) {
+        showChords.value = fav.showChords
+      } else {
+        showChords.value = true
+      }
 
       if (!fav.spotifyTrackId) {
         fetchSpotifyId(artist, track, fav)
@@ -92,6 +96,11 @@ export const useChordsStore = defineStore('chords', () => {
     // No saved chords — show "no chords found" but still fetch Spotify ID
     chordsLoading.value = false
     chordsFound.value = false
+    if (fav && fav.showChords !== undefined) {
+      showChords.value = fav.showChords
+    } else {
+      showChords.value = false
+    }
     fetchSpotifyId(artist, track, fav)
   }
 
@@ -142,6 +151,18 @@ export const useChordsStore = defineStore('chords', () => {
     }
   }
 
+  async function toggleChords() {
+    showChords.value = !showChords.value
+    const favStore = useFavoritesStore()
+    if (favStore.currentTitle) {
+      const fav = favStore.favorites.find(f => f.title === favStore.currentTitle)
+      if (fav && fav.id) {
+        fav.showChords = showChords.value
+        api.updateSong(fav.id, { showChords: showChords.value })
+      }
+    }
+  }
+
   return {
     showChords,
     chordsLoading,
@@ -157,5 +178,6 @@ export const useChordsStore = defineStore('chords', () => {
     onChordsEdited,
     onResetChords,
     onTransposeChords,
+    toggleChords
   }
 })

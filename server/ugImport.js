@@ -14,6 +14,7 @@ export function setupUGImportRoutes(server) {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'POST, OPTIONS',
         'Access-Control-Allow-Headers': 'Content-Type',
+        'Access-Control-Allow-Private-Network': 'true'
       })
       res.end()
       return
@@ -57,16 +58,26 @@ export function setupUGImportRoutes(server) {
 
 export function setupBookmarkletRoutes(server, serverDir) {
   const bookmarkletPath = join(serverDir, 'bookmarklet.js')
-  // Cache bookmarklet code at startup
-  const bookmarkletCode = readFileSync(bookmarkletPath, 'utf-8')
-
   server.use('/api/bookmarklet.js', (req, res) => {
     res.writeHead(200, { 'Content-Type': 'application/javascript' })
-    res.end(bookmarkletCode)
+    res.end(readFileSync(bookmarkletPath, 'utf-8'))
   })
 
   server.use('/api/bookmarklet', (req, res) => {
-    const minified = bookmarkletCode.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\s+/g, ' ').trim()
+    const bookmarkletCode = readFileSync(bookmarkletPath, 'utf-8')
+    const host = req.headers.host || '127.0.0.1:5555'
+    // We are behind basicSsl but Vite socket parsing might not flag .encrypted perfectly. 
+    // Usually local dev is fine just assuming https if basicSsl is used, but we'll try to sniff it. 
+    // Actually, just force https: if we are using basicSsl, or respect forwarded headers.
+    const proto = req.headers['x-forwarded-proto'] || (req.socket.encrypted ? 'https' : 'http')
+    
+    // Inject the exact url the user is using so the browser's SSL exception cache matches it
+    const injectedCode = bookmarkletCode.replace(
+      /var API_BASE = .*?;/,
+      `var API_BASE = '${proto}:' + String.fromCharCode(47, 47) + '${host}';`
+    )
+
+    const minified = injectedCode.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\s+/g, ' ').trim()
     const href = 'javascript:' + encodeURIComponent(minified)
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
     res.end(`<!DOCTYPE html>
