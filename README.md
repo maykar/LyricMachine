@@ -2,11 +2,6 @@
 
 A full-stack web application for live musical performance, setlist management, and dynamic lyrics display. Built to be used during live jam sessions.
 
-<!-- [Screenshot: Main Library View] -->
-<div align="center">
-  <img src="public/SloshRat.png" alt="SloshRat" width="200" />
-</div>
-
 ## Overview
 
 LyricMachine combines a robust library management system with a high-performance, responsive lyrics and chords display. It deeply integrates with the Spotify Web API and Ultimate Guitar to automate data aggregation, allowing musicians to focus on the music.
