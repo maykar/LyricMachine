@@ -139,4 +139,8 @@ export const api = {
   // Search (lrclib)
   searchLyrics: (artist, track) =>
     get(`/api/search?artist=${encodeURIComponent(artist)}&track=${encodeURIComponent(track)}`),
+
+  // UG Native
+  ugSearch: (query) => get(`/api/ug/search?q=${encodeURIComponent(query)}`),
+  ugGetChords: (id) => get(`/api/ug/chords?id=${id}`),
 }

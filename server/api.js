@@ -3,11 +3,13 @@ import open from 'open'
 import defaultBrowser from 'default-browser'
 import * as db from './db.js'
 import { validate, SongCreateSchema, SongUpdateSchema, ReorderSchema, BulkUpdateSchema, ImportSchema } from './validation.js'
-import { handleSpotifyIdRequest, handlePlaylistTracks } from './spotify.js'
+import { handleSpotifyIdRequest, handlePlaylistTracks, getSpotifyToken } from './spotify.js'
+import { spotifyFetch, pickAlbumArt } from './utils.js'
 import { handlePopularArt } from './popularArt.js'
 import { setupUGImportRoutes, setupBookmarkletRoutes } from './ugImport.js'
 import { setupSpotifyAuthRoutes } from './spotifyAuth.js'
-import { setupSpotifyPlaylistRoutes } from './spotifyPlaylists.js'
+import { setupSpotifyPlaylistRoutes, pushOrderToSpotify } from './spotifyPlaylists.js'
+import { setupUGNativeRoutes } from './ugApi.js'
 
 // --- Warn on missing Spotify env vars (non-fatal) ---
 const spotifyEnv = ['SPOTIFY_CLIENT_ID', 'SPOTIFY_CLIENT_SECRET']
@@ -94,6 +96,63 @@ async function getDefaultBrowser() {
   }
 }
 
+// --- Auto-add to Spotify source playlist on favorite ---
+
+/**
+ * After a song is created/upserted, resolve its Spotify track ID if missing,
+ * then push the full playlist order to Spotify.
+ */
+async function addToSourcePlaylistIfNeeded(song) {
+  // Check source playlist is configured
+  const sourceSetting = db.getSetting('spotify_source_playlist')
+  const playlistId = sourceSetting?.value || sourceSetting
+  if (!playlistId) return
+
+  // Check Spotify is connected
+  const user = db.getSetting('spotify_user')
+  if (!user) return
+
+  // If no track ID, search Spotify and backfill
+  if (!song.spotifyTrackId) {
+    const sep = song.title.indexOf(' — ')
+    if (sep < 0) return
+
+    const artist = song.title.slice(0, sep)
+    const track = song.title.slice(sep + 3)
+
+    try {
+      const token = await getSpotifyToken()
+      const headers = { Authorization: `Bearer ${token}` }
+
+      const strictQ = encodeURIComponent(`artist:${artist} track:${track}`)
+      let res = await fetch(`https://api.spotify.com/v1/search?q=${strictQ}&type=track&limit=5`, { headers })
+      let data = await res.json()
+      let firstTrack = data.tracks?.items?.[0]
+
+      if (!firstTrack) {
+        const looseQ = encodeURIComponent(`${artist} ${track}`)
+        res = await fetch(`https://api.spotify.com/v1/search?q=${looseQ}&type=track&limit=5`, { headers })
+        data = await res.json()
+        firstTrack = data.tracks?.items?.[0]
+      }
+
+      if (!firstTrack) return
+
+      db.updateSong(song.id, {
+        spotifyTrackId: firstTrack.id,
+        albumArt: pickAlbumArt(firstTrack.album?.images),
+      })
+    } catch (err) {
+      console.warn('Spotify search for auto-add failed:', err.message)
+      return
+    }
+  }
+
+  // Push full playlist in LyricMachine order
+  await pushOrderToSpotify()
+  console.log(`Auto-synced playlist after adding "${song.title}"`)
+}
+
 // --- Setup all API routes ---
 export function setupAPI(server) {
 
@@ -124,6 +183,9 @@ export function setupAPI(server) {
   // Spotify auth + playlist routes
   setupSpotifyAuthRoutes(server, { get, post, put, json, parseBody })
   setupSpotifyPlaylistRoutes(server, { get, post, json, parseBody })
+
+  // Native UG Backend routes
+  setupUGNativeRoutes(server, { get, json })
 
   // ===== Songs CRUD =====
 
@@ -162,6 +224,11 @@ export function setupAPI(server) {
       if (error) return json(res, { error }, 400)
       const song = db.upsertSong(data)
       json(res, song, 201)
+
+      // Fire-and-forget: add to Spotify source playlist if configured
+      addToSourcePlaylistIfNeeded(song).catch(err =>
+        console.warn('Auto-add to source playlist failed:', err.message)
+      )
     } catch (err) {
       json(res, { error: err.message }, 500)
     }
@@ -175,6 +242,11 @@ export function setupAPI(server) {
       if (error) return json(res, { error }, 400)
       db.reorderSongs(data.ids)
       json(res, { ok: true })
+
+      // Fire-and-forget: push new order to Spotify
+      pushOrderToSpotify().catch(err =>
+        console.warn('Order push to Spotify failed:', err.message)
+      )
     } catch (err) {
       json(res, { error: err.message }, 500)
     }

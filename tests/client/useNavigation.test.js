@@ -126,4 +126,57 @@ describe('useNavigation', () => {
       expect(nav.modalStack.value).toEqual([]) // modal closed
     })
   })
+
+  describe('History API integration', () => {
+    it('initHistory calls replaceState to seed initial entry', () => {
+      const spy = vi.spyOn(window.history, 'replaceState')
+      nav.initHistory()
+      expect(spy).toHaveBeenCalledWith(
+        { page: 'dashboard', modals: [] }, ''
+      )
+      spy.mockRestore()
+    })
+
+    it('goToPage pushes history state', () => {
+      nav.initHistory()
+      const spy = vi.spyOn(window.history, 'pushState')
+      nav.goToPage('library')
+      expect(spy).toHaveBeenCalledWith(
+        { page: 'library', modals: [] }, ''
+      )
+      spy.mockRestore()
+    })
+
+    it('pushModal pushes history state', () => {
+      nav.initHistory()
+      const spy = vi.spyOn(window.history, 'pushState')
+      nav.pushModal('settings')
+      expect(spy).toHaveBeenCalledWith(
+        { page: 'dashboard', modals: ['settings'] }, ''
+      )
+      spy.mockRestore()
+    })
+
+    it('popstate event triggers dismissTop', () => {
+      nav.initHistory()
+      nav.goToPage('lyrics')
+      nav.pushModal('kanban')
+
+      // Simulate browser back
+      window.dispatchEvent(new PopStateEvent('popstate'))
+
+      // Modal should be dismissed
+      expect(nav.modalStack.value).toEqual([])
+      expect(nav.page.value).toBe('lyrics') // page unchanged
+    })
+
+    it('popstate on page (no modal) goes back', () => {
+      nav.initHistory()
+      nav.goToPage('library')
+
+      window.dispatchEvent(new PopStateEvent('popstate'))
+
+      expect(nav.page.value).toBe('dashboard')
+    })
+  })
 })

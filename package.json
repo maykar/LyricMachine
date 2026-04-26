@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "@chenglou/pretext": "^0.0.4",
+    "@google/generative-ai": "^0.24.1",
     "@mdi/js": "^7.4.47",
     "@vueuse/core": "^14.2.1",
     "canvas-confetti": "^1.9.4",

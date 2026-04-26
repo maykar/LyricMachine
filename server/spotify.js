@@ -39,16 +39,24 @@ export async function handleSpotifyIdRequest(req, res) {
 
   try {
     const token = await getSpotifyToken()
-    const q = encodeURIComponent(`artist:${artist} track:${track}`)
-    const searchRes = await fetch(`https://api.spotify.com/v1/search?q=${q}&type=track&limit=5`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-    const searchData = await searchRes.json()
-    const tracks = searchData.tracks?.items || []
+    const headers = { Authorization: `Bearer ${token}` }
 
-    res.writeHead(200, { 'Content-Type': 'application/json' })
-    const firstTrack = tracks[0]
+    // Try strict field-filtered search first
+    const strictQ = encodeURIComponent(`artist:${artist} track:${track}`)
+    let searchRes = await fetch(`https://api.spotify.com/v1/search?q=${strictQ}&type=track&limit=5`, { headers })
+    let searchData = await searchRes.json()
+    let firstTrack = searchData.tracks?.items?.[0]
+
+    // Fallback: loose search (handles slight name differences)
+    if (!firstTrack) {
+      const looseQ = encodeURIComponent(`${artist} ${track}`)
+      searchRes = await fetch(`https://api.spotify.com/v1/search?q=${looseQ}&type=track&limit=5`, { headers })
+      searchData = await searchRes.json()
+      firstTrack = searchData.tracks?.items?.[0]
+    }
+
     const albumArt = pickAlbumArt(firstTrack?.album?.images)
+    res.writeHead(200, { 'Content-Type': 'application/json' })
     res.end(JSON.stringify({
       spotifyTrackId: firstTrack?.id || null,
       albumArt,

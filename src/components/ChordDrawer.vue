@@ -8,10 +8,11 @@
       </template>
       <template v-else>
         <button v-if="found && sections.length" class="chord-icon-btn" @click="changeTranspose(-1)" title="Transpose down"><MdiIcon :path="mdiChevronLeft" :size="16" /></button>
-        <button v-if="found && sections.length" class="chord-icon-btn reset" @click="resetTranspose" title="Reset"><MdiIcon :path="mdiRefresh" :size="16" /></button>
+        <button v-if="found && sections.length" class="chord-icon-btn reset" @click="resetTranspose" title="Reset transpose"><MdiIcon :path="mdiRefresh" :size="16" /></button>
         <button v-if="found && sections.length" class="chord-icon-btn" @click="changeTranspose(1)" title="Transpose up"><MdiIcon :path="mdiChevronRight" :size="16" /></button>
         <button class="chord-icon-btn" @click="startEditing" title="Edit chords"><MdiIcon :path="mdiPencil" :size="16" /></button>
-        <button class="chord-text-btn" @click="$emit('reset-chords')" title="Reset to original">Reset</button>
+        <button class="chord-icon-btn" @click="openUGSearch" title="Search Ultimate Guitar"><MdiIcon :path="mdiMagnify" :size="16" /></button>
+        <button class="chord-icon-btn cancel" @click="$emit('reset-chords')" title="Clear custom chords"><MdiIcon :path="mdiDelete" :size="16" /></button>
       </template>
     </div>
 
@@ -21,6 +22,8 @@
       <!-- Display mode -->
       <template v-if="!editing">
         <div v-if="capo" class="chord-status" style="margin-bottom: 0.4rem;">Capo: fret {{ capo }}</div>
+        <div v-if="tonalityName" class="chord-status" style="margin-bottom: 0.4rem;">Key: {{ tonalityName }}</div>
+        <div v-if="tuning" class="chord-status" style="margin-bottom: 0.4rem;">Tuning: {{ tuning }}</div>
         <div v-if="structure" class="chord-structure">{{ formatStructure(structure) }}</div>
         <div v-if="displaySections.length" class="chord-sections">
           <div v-for="(s, i) in displaySections" :key="i" class="chord-section">
@@ -56,14 +59,24 @@
       </template>
     </template>
   </div>
+
+  <UGSearchOverlay 
+    v-if="showUGSearch" 
+    :initial-query="currentTitle"
+    @import-chords="onImportChords"
+    @close="showUGSearch = false" 
+  />
 </template>
 
 <script setup>
 import { ref, computed } from 'vue'
+import { api } from '../api.js'
+import { useFavoritesStore } from '../stores/favorites.js'
 import MdiIcon from './MdiIcon.vue'
+import UGSearchOverlay from './UGSearchOverlay.vue'
 import {
   mdiCheck, mdiClose, mdiChevronLeft, mdiChevronRight,
-  mdiRefresh, mdiPencil, mdiPlus,
+  mdiRefresh, mdiPencil, mdiPlus, mdiMagnify, mdiDelete
 } from '@mdi/js'
 
 const NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
@@ -75,6 +88,8 @@ const props = defineProps({
   sections: { type: Array, default: () => [] },
   structure: { type: String, default: '' },
   capo: { type: Number, default: null },
+  tonalityName: { type: String, default: null },
+  tuning: { type: String, default: null },
   hasCustomChords: { type: Boolean, default: false },
   transpose: { type: Number, default: 0 },
 })
@@ -84,6 +99,12 @@ const emit = defineEmits(['update:chords', 'reset-chords', 'change-transpose'])
 const editing = ref(false)
 const editSections = ref([])
 const editStructure = ref('')
+
+const showUGSearch = ref(false)
+
+const currentTitle = computed(() => {
+  return useFavoritesStore().currentTitle || ''
+})
 
 const displaySections = computed(() => {
   if (!props.transpose) return props.sections
@@ -139,6 +160,9 @@ function saveEdits() {
   emit('update:chords', {
     sections: cleaned,
     structure: formatStructure(editStructure.value),
+    capo: props.capo,
+    tonalityName: props.tonalityName,
+    tuning: props.tuning
   })
   editing.value = false
 }
@@ -185,6 +209,20 @@ function changeTranspose(semitones) {
 
 function resetTranspose() {
   emit('change-transpose', -props.transpose)
+}
+
+function openUGSearch() {
+  showUGSearch.value = true
+}
+
+function onImportChords(parsedData) {
+  emit('update:chords', {
+    sections: parsedData.sections,
+    structure: parsedData.structure || '',
+    capo: parsedData.capo || null,
+    tonalityName: parsedData.tonalityName || null,
+    tuning: parsedData.tuning || null
+  })
 }
 </script>
 
@@ -269,6 +307,7 @@ function resetTranspose() {
   top: 0.5rem;
   right: 0.75rem;
   display: flex;
+  align-items: center;
   gap: var(--space-sm);
   z-index: 1;
 }

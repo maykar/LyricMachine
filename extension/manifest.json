@@ -1,0 +1,35 @@
+{
+  "manifest_version": 3,
+  "name": "LyricMachine Chord Import",
+  "version": "1.0.0",
+  "description": "Import chord charts from Ultimate Guitar into LyricMachine",
+  "host_permissions": [
+    "*://127.0.0.1/*",
+    "*://localhost/*"
+  ],
+  "action": {
+    "default_title": "Import Chords to LyricMachine",
+    "default_icon": {
+      "48": "icon.png",
+      "128": "icon.png"
+    }
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [{
+    "matches": ["*://*.ultimate-guitar.com/*"],
+    "js": ["content.js"],
+    "run_at": "document_idle"
+  }],
+  "icons": {
+    "48": "icon.png",
+    "128": "icon.png"
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "chord-import@lyricmachine",
+      "strict_min_version": "120.0"
+    }
+  }
+}

@@ -16,6 +16,8 @@ export const useChordsStore = defineStore('chords', () => {
   const chordSections = ref([])
   const chordStructure = ref('')
   const chordCapo = ref(null)
+  const chordTonality = ref(null)
+  const chordTuning = ref(null)
   const chordTranspose = ref(0)
   const spotifyTrackId = ref(null)
   const showPlayer = ref(false)
@@ -45,6 +47,52 @@ export const useChordsStore = defineStore('chords', () => {
     } catch {}
   }
 
+  async function autoFetchChords(artist, track, fav) {
+    try {
+      const searchResults = await api.ugSearch(`${artist} ${track}`)
+      if (searchResults && searchResults.length > 0) {
+        for (const match of searchResults) {
+          const chordData = await api.ugGetChords(match.id)
+          if (chordData?.parsed && chordData.parsed.sections.length > 0) {
+            chordSections.value = chordData.parsed.sections
+            chordStructure.value = chordData.parsed.structure || ''
+            chordCapo.value = chordData.parsed.capo || null
+            chordTonality.value = chordData.parsed.tonalityName || null
+            chordTuning.value = chordData.parsed.tuning || null
+            chordsFound.value = true
+            
+            if (fav) {
+              fav.customChords = chordSections.value
+              fav.customStructure = chordStructure.value
+              fav.capo = chordCapo.value
+              fav.tonalityName = chordTonality.value
+              fav.tuning = chordTuning.value
+              showChords.value = true // Automatically show the freshly fetched chords
+              fav.showChords = true // Persist the visible state
+              if (fav.id) {
+                api.updateSong(fav.id, { 
+                  customChords: chordSections.value, 
+                  customStructure: chordStructure.value,
+                  capo: chordCapo.value,
+                  tonalityName: chordTonality.value,
+                  tuning: chordTuning.value,
+                  showChords: true
+                })
+              }
+            }
+            break // We found a successfully parsed chord chart, stop iterating
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('Auto fetch chords failed:', err)
+    } finally {
+      if (!chordsFound.value) {
+        chordsLoading.value = false
+      }
+    }
+  }
+
   async function fetchChords(title, { keepDrawerOpen = false } = {}) {
     if (!title) return
     const parts = title.split(' — ')
@@ -63,6 +111,8 @@ export const useChordsStore = defineStore('chords', () => {
     chordSections.value = []
     chordStructure.value = ''
     chordCapo.value = null
+    chordTonality.value = null
+    chordTuning.value = null
     chordTranspose.value = 0
     if (!keepDrawerOpen) spotifyTrackId.value = null
 
@@ -74,11 +124,14 @@ export const useChordsStore = defineStore('chords', () => {
     }
 
     // Load saved chords from favorites
-    if (fav && fav.customChords) {
+    const hasValidChords = fav && Array.isArray(fav.customChords) ? fav.customChords.length > 0 : !!fav?.customChords
+    if (hasValidChords) {
       chordSections.value = fav.customChords
       chordStructure.value = fav.customStructure || ''
       spotifyTrackId.value = fav.spotifyTrackId || null
       chordCapo.value = fav.capo ?? null
+      chordTonality.value = fav.tonalityName || null
+      chordTuning.value = fav.tuning || null
       chordsFound.value = true
       chordsLoading.value = false
       if (fav.showChords !== undefined) {
@@ -93,8 +146,8 @@ export const useChordsStore = defineStore('chords', () => {
       return
     }
 
-    // No saved chords — show "no chords found" but still fetch Spotify ID
-    chordsLoading.value = false
+    // No saved chords — trigger auto-fetch and Spotify ID backfill
+    chordsLoading.value = true
     chordsFound.value = false
     if (fav && fav.showChords !== undefined) {
       showChords.value = fav.showChords
@@ -102,11 +155,17 @@ export const useChordsStore = defineStore('chords', () => {
       showChords.value = false
     }
     fetchSpotifyId(artist, track, fav)
+    autoFetchChords(artist, track, fav).then(() => {
+      chordsLoading.value = false
+    })
   }
 
-  async function onChordsEdited({ sections, structure }) {
+  async function onChordsEdited({ sections, structure, capo, tonalityName, tuning }) {
     chordSections.value = sections
     chordStructure.value = structure
+    if (capo !== undefined) chordCapo.value = capo
+    if (tonalityName !== undefined) chordTonality.value = tonalityName
+    if (tuning !== undefined) chordTuning.value = tuning
     chordsFound.value = sections.length > 0
 
     const favStore = useFavoritesStore()
@@ -115,8 +174,17 @@ export const useChordsStore = defineStore('chords', () => {
       if (fav) {
         fav.customChords = sections
         fav.customStructure = structure
+        if (capo !== undefined) fav.capo = capo
+        if (tonalityName !== undefined) fav.tonalityName = tonalityName
+        if (tuning !== undefined) fav.tuning = tuning
         if (fav.id) {
-          api.updateSong(fav.id, { customChords: sections, customStructure: structure })
+          api.updateSong(fav.id, { 
+            customChords: sections, 
+            customStructure: structure,
+            ...(capo !== undefined && { capo }),
+            ...(tonalityName !== undefined && { tonalityName }),
+            ...(tuning !== undefined && { tuning })
+          })
         }
       }
     }
@@ -170,6 +238,8 @@ export const useChordsStore = defineStore('chords', () => {
     chordSections,
     chordStructure,
     chordCapo,
+    chordTonality,
+    chordTuning,
     chordTranspose,
     spotifyTrackId,
     showPlayer,

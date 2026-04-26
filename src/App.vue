@@ -127,6 +127,8 @@
         :sections="chordSections"
         :structure="chordStructure"
         :capo="chordCapo"
+        :tonality-name="chordTonality"
+        :tuning="chordTuning"
         :has-custom-chords="hasCustomChords"
         :transpose="chordTranspose"
         @update:chords="onChordsEdited"
@@ -224,7 +226,7 @@ const {
 
 const {
   showChords, chordsLoading, chordsFound,
-  chordSections, chordStructure, chordCapo, chordTranspose,
+  chordSections, chordStructure, chordCapo, chordTonality, chordTuning, chordTranspose,
   spotifyTrackId, showPlayer, hasCustomChords,
   fetchChords, onChordsEdited, onResetChords, onTransposeChords, toggleChords
 } = useChords()
@@ -272,7 +274,7 @@ function openKanban() {
 const {
   page, goToPage, goBack,
   hasModal, pushModal, closeModal, popModal, isModalOpen,
-  dismissTop,
+  dismissTop, initHistory,
 } = useNavigation()
 
 function toggleModal(name) {
@@ -459,6 +461,7 @@ watch(page, (newPage, oldPage) => {
 
 // --- Lifecycle ---
 onMounted(async () => {
+  initHistory()
   await loadFavorites()
   loadUserDefaults()
   customLabelsStore.load()

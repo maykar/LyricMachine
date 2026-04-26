@@ -71,6 +71,31 @@ export function setupSpotifyPlaylistRoutes(server, { get, post, json, parseBody 
   })
 }
 
+// --- Lightweight order push (called after add/reorder) ---
+
+/**
+ * Replace the Spotify source playlist contents to match LyricMachine sort_order.
+ * Lightweight — no imports, no track resolution, just reads current DB and pushes order.
+ */
+export async function pushOrderToSpotify() {
+  const sourceSetting = db.getSetting('spotify_source_playlist')
+  const playlistId = sourceSetting?.value || sourceSetting
+  if (!playlistId) return
+
+  const user = db.getSetting('spotify_user')
+  if (!user) return
+
+  const songs = db.getAllSongs()
+  const uris = songs
+    .filter(s => s.spotifyTrackId)
+    .map(s => `spotify:track:${s.spotifyTrackId}`)
+
+  if (uris.length > 0) {
+    await replacePlaylistTracks(playlistId, uris)
+    console.log(`Order push: synced ${uris.length} tracks to Spotify playlist`)
+  }
+}
+
 // --- Sync engine ---
 
 let syncInFlight = false
@@ -118,8 +143,9 @@ async function syncSourcePlaylist(playlistId) {
 
   let imported = 0
   let markedRemoved = 0
+  let pushed = 0
 
-  // Collect new tracks to import
+  // --- Pull: import new tracks from Spotify into LyricMachine ---
   const newTracks = playlistTracks.filter(track => {
     if (track.type !== 'track') return false
     const title = `${track.artist} \u2014 ${track.name}`
@@ -154,9 +180,67 @@ async function syncSourcePlaylist(playlistId) {
     }
   }
 
-  // Mark songs no longer in source playlist
+  // --- Push: add local favorites to the Spotify playlist ---
+  // Songs that already have a track ID but aren't in the playlist
+  const withTrackId = songs.filter(s => s.spotifyTrackId && !playlistTrackIds.has(s.spotifyTrackId))
+
+  // Songs without a track ID — search Spotify to resolve them
+  const withoutTrackId = songs.filter(s => !s.spotifyTrackId)
+  for (const song of withoutTrackId) {
+    const sep = song.title.indexOf(' — ')
+    if (sep < 0) continue
+    const artist = song.title.slice(0, sep)
+    const track = song.title.slice(sep + 3)
+    try {
+      const { getSpotifyToken } = await import('./spotify.js')
+      const token = await getSpotifyToken()
+      const headers = { Authorization: `Bearer ${token}` }
+
+      // Try strict field-filtered search first
+      const strictQ = encodeURIComponent(`artist:${artist} track:${track}`)
+      let res = await fetch(`https://api.spotify.com/v1/search?q=${strictQ}&type=track&limit=5`, { headers })
+      let data = await res.json()
+      let firstTrack = data.tracks?.items?.[0]
+
+      // Fallback: loose search (handles slight name differences)
+      if (!firstTrack) {
+        const looseQ = encodeURIComponent(`${artist} ${track}`)
+        res = await fetch(`https://api.spotify.com/v1/search?q=${looseQ}&type=track&limit=5`, { headers })
+        data = await res.json()
+        firstTrack = data.tracks?.items?.[0]
+      }
+
+      if (firstTrack) {
+        song.spotifyTrackId = firstTrack.id
+        const albumArt = pickAlbumArt(firstTrack.album?.images)
+        db.updateSong(song.id, { spotifyTrackId: firstTrack.id, albumArt })
+        withTrackId.push(song)
+        console.log(`Source sync: resolved Spotify ID for "${song.title}"`)
+      }
+    } catch (err) {
+      console.warn(`Source sync: Spotify search failed for "${song.title}":`, err.message)
+    }
+  }
+
+  const toAdd = withTrackId
+  if (toAdd.length > 0) {
+    const uris = toAdd.map(s => `spotify:track:${s.spotifyTrackId}`)
+    await addTracksToPlaylist(playlistId, uris)
+    pushed = toAdd.length
+    // Clear notInPlaylist flag for pushed songs
+    for (const song of toAdd) {
+      if (song.notInPlaylist) {
+        db.updateSong(song.id, { notInPlaylist: false })
+      }
+    }
+    console.log(`Source sync: pushed ${pushed} local favorites to Spotify playlist`)
+  }
+
+  // Mark songs no longer in source playlist (skip songs without track IDs)
   for (const song of songs) {
     if (!song.spotifyTrackId) continue
+    // Don't mark songs we just pushed
+    if (toAdd.some(s => s.id === song.id)) continue
     if (!playlistTrackIds.has(song.spotifyTrackId) && !song.notInPlaylist) {
       db.updateSong(song.id, { notInPlaylist: true })
       markedRemoved++
@@ -167,7 +251,19 @@ async function syncSourcePlaylist(playlistId) {
     }
   }
 
-  return { imported, markedRemoved }
+  // --- Order sync: push LyricMachine sort_order to Spotify playlist ---
+  // Re-read songs after all mutations above (new imports, backfilled IDs)
+  const finalSongs = db.getAllSongs()
+  const orderedUris = finalSongs
+    .filter(s => s.spotifyTrackId)
+    .map(s => `spotify:track:${s.spotifyTrackId}`)
+
+  if (orderedUris.length > 0) {
+    await replacePlaylistTracks(playlistId, orderedUris)
+    console.log(`Source sync: reordered Spotify playlist to match LyricMachine (${orderedUris.length} tracks)`)
+  }
+
+  return { imported, markedRemoved, pushed }
 }
 
 // --- Spotify API helpers ---
@@ -201,6 +297,30 @@ async function getPlaylistTracks(playlistId) {
 async function addTracksToPlaylist(playlistId, uris) {
   // Spotify allows max 100 per request
   for (let i = 0; i < uris.length; i += 100) {
+    const batch = uris.slice(i, i + 100)
+    await spotifyFetch(`https://api.spotify.com/v1/playlists/${playlistId}/tracks`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ uris: batch }),
+    })
+  }
+}
+
+/**
+ * Replace all tracks in a Spotify playlist (sets exact order).
+ * PUT replaces the first batch, POST appends the rest.
+ */
+async function replacePlaylistTracks(playlistId, uris) {
+  // PUT replaces entire playlist (max 100 URIs)
+  const first = uris.slice(0, 100)
+  await spotifyFetch(`https://api.spotify.com/v1/playlists/${playlistId}/tracks`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ uris: first }),
+  })
+
+  // POST remaining batches
+  for (let i = 100; i < uris.length; i += 100) {
     const batch = uris.slice(i, i + 100)
     await spotifyFetch(`https://api.spotify.com/v1/playlists/${playlistId}/tracks`, {
       method: 'POST',

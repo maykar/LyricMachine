@@ -62,6 +62,8 @@ db.exec(`
     show_chords      INTEGER,
     synced_lyrics    TEXT,
     lyric_view       TEXT DEFAULT 'standard',
+    tonality_name    TEXT,
+    tuning           TEXT,
     created_at      TEXT DEFAULT (datetime('now')),
     updated_at      TEXT DEFAULT (datetime('now'))
   )
@@ -204,12 +206,12 @@ const stmts = {
       label, played, play_count, custom_chords, custom_structure,
       spotify_track_id, album_art, capo, transpose, custom_labels,
       not_in_playlist, sort_order, merge_aggressive, collapse_chorus,
-      synced_lyrics, lyric_view)
+      show_chords, synced_lyrics, lyric_view)
     VALUES (@title, @lyrics, @font_adjust, @merge, @separators, @alt_colors,
       @label, @played, @play_count, @custom_chords, @custom_structure,
       @spotify_track_id, @album_art, @capo, @transpose, @custom_labels,
       @not_in_playlist, @sort_order, @merge_aggressive, @collapse_chorus,
-      @synced_lyrics, @lyric_view)
+      @show_chords, @synced_lyrics, @lyric_view)
   `),
 
   updateSong:  null,  // built dynamically per-request (partial updates)
@@ -253,6 +255,8 @@ const SCHEMA = [
   { key: 'showChords',      col: 'show_chords',        type: 'bool' },
   { key: 'syncedLyrics',    col: 'synced_lyrics',       type: 'str' },
   { key: 'lyricView',       col: 'lyric_view',          type: 'str',  default: 'standard' },
+  { key: 'tonalityName',    col: 'tonality_name',       type: 'str' },
+  { key: 'tuning',          col: 'tuning',              type: 'str' },
 ]
 
 // Derived lookups — computed once from SCHEMA

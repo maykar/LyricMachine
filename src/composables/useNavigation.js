@@ -20,5 +20,6 @@ export function useNavigation() {
     popModal: store.popModal,
     isModalOpen: store.isModalOpen,
     dismissTop: store.dismissTop,
+    initHistory: store.initHistory,
   }
 }

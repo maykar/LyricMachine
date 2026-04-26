@@ -12,10 +12,8 @@ dist
 dist-ssr
 *.local
 .env
-
 # Chordonomicon data (264MB CSV + SQLite)
 server/data/
-
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
@@ -26,3 +24,10 @@ server/data/
 *.njsproj
 *.sln
 *.sw?
+# Agent/AI Files
+.agent/
+GEMINI.md
+ryan_meek_resume.md
+gemini.md
+
+.gemini/

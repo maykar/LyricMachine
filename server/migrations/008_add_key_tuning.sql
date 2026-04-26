@@ -1,0 +1,2 @@
+ALTER TABLE songs ADD COLUMN tonality_name TEXT;
+ALTER TABLE songs ADD COLUMN tuning TEXT;

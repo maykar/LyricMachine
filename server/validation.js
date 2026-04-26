@@ -40,6 +40,8 @@ export const SongCreateSchema = v.object({
   showChords: BoolInt,
   syncedLyrics: v.optional(v.nullable(v.string())),
   lyricView: v.optional(v.picklist(['standard', 'karaoke'])),
+  tonalityName: v.optional(v.nullable(v.string())),
+  tuning: v.optional(v.nullable(v.string())),
 })
 
 export const SongUpdateSchema = v.partial(SongCreateSchema)
