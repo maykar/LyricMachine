@@ -180,12 +180,14 @@ export function setupAPI(server) {
   setupUGImportRoutes(server)
   setupBookmarkletRoutes(server, import.meta.dirname)
 
+  const routes = { get, post, put, del, json, parseBody }
+
   // Spotify auth + playlist routes
-  setupSpotifyAuthRoutes(server, { get, post, put, json, parseBody })
-  setupSpotifyPlaylistRoutes(server, { get, post, json, parseBody })
+  setupSpotifyAuthRoutes(server, routes)
+  setupSpotifyPlaylistRoutes(server, routes)
 
   // Native UG Backend routes
-  setupUGNativeRoutes(server, { get, json })
+  setupUGNativeRoutes(server, routes)
 
   // ===== Songs CRUD =====
 

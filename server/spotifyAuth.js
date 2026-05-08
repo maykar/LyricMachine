@@ -11,7 +11,8 @@ function getRedirectUri() {
   return process.env.SPOTIFY_REDIRECT_URI
 }
 
-export function setupSpotifyAuthRoutes(server, { get, post, put, json, parseBody }) {
+export function setupSpotifyAuthRoutes(server, routes) {
+  const { get, post, put, json, parseBody } = routes
 
   // GET /api/spotify/login — redirect user to Spotify authorization
   get(server, '/api/spotify/login', (req, res) => {

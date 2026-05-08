@@ -3,7 +3,8 @@ import { normalize, pickAlbumArt, spotifyFetch, fetchLrcLibLyrics } from './util
 
 // --- Route setup ---
 
-export function setupSpotifyPlaylistRoutes(server, { get, post, json, parseBody }) {
+export function setupSpotifyPlaylistRoutes(server, routes) {
+  const { get, post, json, parseBody } = routes
 
   // GET /api/spotify/playlists — list user's playlists for the picker
   get(server, '/api/spotify/playlists', async (req, res) => {

@@ -124,7 +124,8 @@ export async function getTab(tabId) {
 /**
  * Express routing layer for the UG Native Backend
  */
-export function setupUGNativeRoutes(server, { get, json }) {
+export function setupUGNativeRoutes(server, routes) {
+  const { get, json } = routes
   get(server, '/api/ug/search', async (req, res) => {
     try {
       const url = new URL(req.url, 'http://localhost')
